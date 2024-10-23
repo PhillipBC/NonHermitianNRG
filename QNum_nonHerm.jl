@@ -3,11 +3,11 @@
     (Adapted from Andrews Fortran code for Hermitian systems)
 """
 #
-using SparseArrays
-using LinearAlgebra
-using Distributions
-using JLD2
-using GenericSchur
+using SparseArrays  # Sparse matrices for fast multiplcations
+using LinearAlgebra # LinearAlgebramethods
+using Distributions # Random Distributions (Only if you want noise added)
+using JLD2          # Julia file saving 
+using GenericSchur  # Schur decomposition for accurate eigedecomp. 
 
 function qn(QN::Dict, l::Int, q1::Int, q2::Int)
     # the 'get(D,x,i)' function returns the value of the key 'x' in the Dictionary 'D'
@@ -27,78 +27,35 @@ function new_qn(QN::Dict, iter_count::Array, l::Int, q1::Int, q2::Int)
     return QN, iter_count, pos
 end
 function get_LR_eig(A::Matrix)
-    # Get the left and right eigenvectors
-    # We get them both using eigen() on the matrix and its adjoint,
-    # as eigen() by default deals with ill-conditioned matrices
-    # Then we sort them accordnigly 
+    # Get the left and right eigenvectors of the matrix A
+    # We get them both using a schur decomposition of the matrix,
+    # We also get the eigenvalues and sort them accordnigly
+    # The eigevctors are then sorted in the same manner 
 
-    if sort_type == "LowRe" #|| sort_type == "LowReMag"
-        #A, B = balance!(A)
-        S = schur(A)
-        evals = S.values
-        Ur = eigvecs(S)
-        Ul = eigvecs(S, left=true)
-        #lmul!(B, Ur) # to get the eigenvectors of A
-        #lmul!(B, Ul) # to get the eigenvectors of a
+    S = schur(A)
+    evals = S.values
+    Ur = eigvecs(S)
+    Ul = eigvecs(S, left=true)
 
-        #evals, Ur = eigen(A)
+    if sort_type == "LowRe" #|| sort_type == "LowReMag"  
         e_index = sortperm(evals, by=x -> (real(x), imag(x))) # sort by real component (and then by imag)
-        evals = evals[e_index]
-        #lvals = deepcopy(evals)
+        evals = evals[e_index] 
         Ur = Ur[:, e_index]
-
-        #Adj = Matrix(conj(transpose(A)))
-        #lvals, Ul = eigen(Adj)
-        #e_index = sortperm(lvals, by=x -> (real(x), -imag(x))) # sort by real component (and then by neg. imag) -> Left eigenvectors have conjugate eigenvalues
         Ul = Ul[:, e_index]
-    elseif sort_type == "LowMag" || sort_type == "LowReMag"
-        #A, B = balance!(A)
-        S = schur(A)
-        evals = S.values
-        Ur = eigvecs(S)
-        Ul = eigvecs(S, left=true)
-        #lmul!(B, Ur) # to get the eigenvectors of A
-        #lmul!(B, Ul) # to get the eigenvectors of a
-
-        #evals, Ur = eigen(A)
+    elseif sort_type == "LowMag" || sort_type == "LowReMag" 
         e_index = sortperm(evals, by=x -> abs(x)) # sort by real component (and then by imag)
         evals = evals[e_index]
-        #lvals = deepcopy(evals)
         Ur = Ur[:, e_index]
-
-        #Adj = Matrix(conj(transpose(A)))
-        #lvals, Ul = eigen(Adj)
-        #e_index = sortperm(lvals, by=x -> abs(x)) # sort by real component (and then by neg. imag) -> Left eigenvectors have conjugate eigenvalues
         Ul = Ul[:, e_index]
     elseif sort_type == "LowImag"
-        #A, B = balance!(A)
-        S = schur(A)
-        evals = S.values
-        Ur = eigvecs(S)
-        Ul = eigvecs(S, left=true)
-        #lmul!(B, Ur) # to get the eigenvectors of A
-        #lmul!(B, Ul) # to get the eigenvectors of a
-
-        #evals, Ur = eigen(A)
         e_index = sortperm(evals, by=x -> (imag(x), real(x))) # sort by real component (and then by imag)
         evals = evals[e_index]
-        #lvals = deepcopy(evals)
         Ur = Ur[:, e_index]
-
-        #Adj = Matrix(conj(transpose(A)))
-        #lvals, Ul = eigen(Adj)
-        #e_index = sortperm(lvals, by=x -> (-imag(x), real(x)) ) # sort by real component (and then by neg. imag) -> Left eigenvectors have conjugate eigenvalues
         Ul = Ul[:, e_index]
     else
         throw("BAD SORT METHOD")
-    end
-    diff = 0.0
-    #diff = maximum(abs.(conj.(lvals[e_index]) .- evals))
-    if diff > 1e-10
-        println("Maximum difference in left and right eigenvalues : ", diff)
-    end
-    #
-    # Take Random combinations of eigenvectors with common eigenvalues to avoid self orthogonalilty 
+    end 
+    # Can take Random combinations of eigenvectors with common eigenvalues to avoid self orthogonalilty 
     do_rand_comb = false
     if do_rand_comb
         j = 2
@@ -133,18 +90,13 @@ function get_LR_eig(A::Matrix)
                 j += 1
             end
         end
-    end
-
-    #RR = 1 ./ (diag(Ur' * Ur)) # inverse of common eigenvector overlaps 
-    #Ur = RR .* Ur # multiplies the conjugate of jth element of LR by the jth column of Ul 
+    end 
 
     # Bi-normalize the eigenvectors for projection operator to be the identity
     LR = 1 ./ (diag(Ul' * Ur)) # inverse of common eigenvector overlaps 
-    Ul = LR' .* Ul # multiplies the conjugate of jth element of LR by the jth column of Ul 
+    Ul = LR' .* Ul # multiplies the conjugate of jth element of LR by the jth column of Ul  
 
-    #acc = 16
-    #return round.(evals, digits=acc), round.(Ul, digits=acc), round.(Ur, digits=acc), diff
-    return evals, Ul, Ur, diff
+    return evals, Ul, Ur
 end
 
 # NRG params
@@ -154,7 +106,7 @@ lambda = 3.0     # Logarthmic discretisation parameter (>1)
 elim = 1e5       # Maximum allowed eigenvalue during truncation  
 
 # System params
-coupled_params = false
+coupled_params = false # impurity coupled to chain or not (false for comparison with TB chain)
 if coupled_params
     U = 0.3        # Spin-spin iteraction
     eps = -0.15     # Energy of spin
@@ -164,19 +116,20 @@ else
     eps = -20.0     # Energy of spin
     V = 0.0        # impurity coupling
 end
+
 magfield = 0.0  # Magnetic field strength
-gamma = -0.1   #1e-10  # non-herm parameter
-noise = 0.0     #1e-10 #1e-10 #1e-13   #1.0e-10 # noise magnitude
+gamma = -0.1    # non-herm parameter
+noise = 0.0     # noise magnitude (can add noise to diagonal of Hamiltonian)
 
 n_pots = 100 #lmax
 
 p_eps = eps;
-p_U = U; # save the values for saving data later
+p_U = U; # store the values for saving data later
 
 sort_type = "LowRe" # "LowMag" "LowRe" "LowReMag"
 
 szsym = 1      # Enforce Sz symmetry ? (1 yes, 0 no)
-qsym = 0      # Enforce Q symmetry ? (1 yes, 0 no)♥
+qsym = 0      # Enforce Q symmetry ? (1 yes, 0 no)
 
 qmax = 15       # maximum Q value
 szmax = 15      # maximum Sz value
@@ -690,15 +643,11 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
 
     return UM, UMd
 end
-function save_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise, energies, diffs, QN, rkept)
+function save_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise, energies, QN, rkept)
     if qsym == 1 && szsym == 1
         fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        save(fstring, "diffs", diffs)
 
         fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
@@ -712,10 +661,6 @@ function save_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, no
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
 
-        fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        save(fstring, "diffs", diffs)
-
         fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
@@ -728,10 +673,6 @@ function save_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, no
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
 
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        save(fstring, "diffs", diffs)
-
         fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
@@ -743,10 +684,6 @@ function save_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, no
         fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        save(fstring, "diffs", diffs)
 
         fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
@@ -782,10 +719,9 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
     szofk = ks .* (2 .- abs.(ks))   # total sz is k*(2-|k|) (-1 -> down spin, 0 -> no spin (0 or 2 electrons), 1 -> up spin)
 
     q0 = zeros(Int, 4) # storage for q and sz values of previous iteration
-    sz0 = zeros(Int, 4)
+    sz0 = zeros(Int, 4) 
 
-    diffs = spzeros(qnmax + 1, lmax + 2) # 2D array indexed by l,QN, with each element a 1D sparse array
-    eground = zeros(ComplexF64, lmax + 2)
+    eground = zeros(ComplexF64, lmax + 2) # store ground states
 
     # perform lmax iterations
     for l in 0:lmax
@@ -856,8 +792,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
             Hs[qnind1][1:d, 1:d] = H
 
             # Store the eigenvalues in the energies array, and the eigenvectors in H
-            energies[l+2, qnind1][1:d], hl[qnind1][1:d, 1:d], hr[qnind1][1:d, 1:d], diffs[qnind1, l+2] = get_LR_eig(H)
-            #println("QN $qnind1 - ", round.(diag(hl[qnind1][1:d, 1:d]' * hr[qnind1][1:d, 1:d]), digits=15))
+            energies[l+2, qnind1][1:d], hl[qnind1][1:d, 1:d], hr[qnind1][1:d, 1:d] = get_LR_eig(H) 
 
             # Update the overlap matrix for the next iteration
             for (k2, qnind2) in [(k2, v) for (k2, v) in QN if (k2[1] == l + 2)]
@@ -866,9 +801,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
 
         end # q loop
 
-        # Enforce symmetries 
-        # TO DO
-        #println("Maximum difference in L and R eigenvalues = ",maximum(diffs[:,l+2]))
+        # Enforce symmetries  
         energies = enforce_QN_symmetry(l, rmax, energies)
 
         # Truncate the eigenvalues (via the rkept array)
@@ -890,8 +823,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
             # For use in next iterative diagonalization step (Ham construction)
             UM, UMd = update_UM_QN_NonHerm_diffQNs(l, QN, rkept, rmaxofk, rstartk, M, hr, hl, prev_UldUr)
 
-            # Update the overlap matrix for the next iteration
-            #prev_UldUr = deepcopy(UldUr)
+            # Update the overlap matrix for the next iteration 
             prev_UldUr = [spzeros(ComplexF64, rlim, rlim) for _ in 1:length(QN)-lQN, _ in 1:length(QN)-lQN]
             for (k1, qnind1) in [(k1, v) for (k1, v) in QN if (k1[1] == l + 2)] # find all the keys in QN at iteration l
                 for (k2, qnind2) in [(k2, v) for (k2, v) in QN if (k2[1] == l + 2)]
@@ -914,18 +846,18 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
     println("Maximum number of quantum number combinations = ", numqns)
     println("Maximum Hilbert space diagonalized : $max_dim")
 
-    save_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise, energies, diffs, QN, rkept)
-    return QN, iter_count, energies, rkept, diffs
+    #save_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise, energies, QN, rkept)
+    return QN, iter_count, energies, rkept
 end
 
 Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground, QN, iter_count, numqns, noise)
-QN, iter_count, energies, rkept, diffs = Results.value
-#QN, iter_count, energies, rkept, Hs = Results.value
+QN, iter_count, energies, rkept = Results.value 
 println("Time Taken - $(Results.time) s")
 
 #
 ##-------------------------------------------------------------------
 function plot_lowest_flow(energies::Array, rkept::Array)
+    # Plot lowest energy values
     PyPlot.rc("mathtext", fontset="stix")
     PyPlot.rc("font", family="STIXGeneral", size=23)
     dpi_val = 100
@@ -1076,109 +1008,17 @@ function plot_flow_QN(QN::Dict, energies::Array, rkept::Array)
     ylabel("Im(\$E\$)")
     legend(fontsize=9, loc="upper center", bbox_to_anchor=(0.45, 1.18), ncol=4, fancybox=false, shadow=false)
 end
-#plot_flow_QN(QN, energies, rkept);
-
-function plot_diffs(diffs)
-    PyPlot.rc("mathtext", fontset="stix")
-    PyPlot.rc("font", family="STIXGeneral", size=23)
-    dpi_val = 100
-    figure(constrained_layout=true, dpi=dpi_val, figsize=(6.5, 4.7))
-    ls = "none"
-    lw = 0.2
-    plot(1:lmax+2, maximum.(eachcol(diffs)), marker="o", linestyle=ls, lw=lw, ms=3.0, label="rlim = $rlim")
-    legend(loc="upper left", fontsize=18)
-    #plot(ftran_temp, (ftran_ent), marker="d", linestyle=":", label="Fortran")
-    xlabel("\$n\$")
-    ylabel("\$ \\max|\\lambda_n^R - \\lambda_n^{L*}| \$")
-    yscale("log")
-    #legend()
-end
-#plot_diffs(diffs)
-
+#plot_flow_QN(QN, energies, rkept); 
 
 ##------------------------------------------------------------------
 
-function load_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise)
-
-    if qsym == 1 && szsym == 1
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        energies = load(fstring, "energies")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        QN = load(fstring, "QN")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_rkept_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        rkept = load(fstring, "rkept")
-    elseif szsym == 1 && qsym != 1
-        fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        energies = load(fstring, "energies")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        QN = load(fstring, "QN")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_rkept_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        rkept = load(fstring, "rkept")
-    elseif szsym != 1 && qsym == 1
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        energies = load(fstring, "energies")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        QN = load(fstring, "QN")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_rkept_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        rkept = load(fstring, "rkept")
-    else
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        energies = load(fstring, "energies")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        QN = load(fstring, "QN")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_rkept_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        rkept = load(fstring, "rkept")
-    end
-
-    return energies, diffs, QN, rkept
-end
-#energies, diffs, QN, rkept = load_data_QN_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise)
+## THE FOLLOWING FUNCTIONS ARE FOR LOADING DATA FROM SAVED DATA
 function load_data_QN_NonHerm_npots(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise)
 
     if qsym == 1 && szsym == 1
         fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         energies = load(fstring, "energies")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
 
         fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
@@ -1192,10 +1032,6 @@ function load_data_QN_NonHerm_npots(lmax, rlim, lambda, elim, p_U, p_eps, V, gam
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         energies = load(fstring, "energies")
 
-        fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
-
         fstring = "/QuantumNumbers/Data/eval_flow/Sz_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         QN = load(fstring, "QN")
@@ -1207,10 +1043,6 @@ function load_data_QN_NonHerm_npots(lmax, rlim, lambda, elim, p_U, p_eps, V, gam
         fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_energies_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         energies = load(fstring, "energies")
-
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
 
         fstring = "/QuantumNumbers/Data/eval_flow/Q_conserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
@@ -1224,10 +1056,6 @@ function load_data_QN_NonHerm_npots(lmax, rlim, lambda, elim, p_U, p_eps, V, gam
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         energies = load(fstring, "energies")
 
-        fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_diffs_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
-        fstring = "." * replace(fstring, "." => "_") * ".jld2"
-        diffs = load(fstring, "diffs")
-
         fstring = "/QuantumNumbers/Data/eval_flow/Q_Sz_nonconserved/$(sort_type)/NHNRG_QNs_QN_n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         QN = load(fstring, "QN")
@@ -1237,12 +1065,16 @@ function load_data_QN_NonHerm_npots(lmax, rlim, lambda, elim, p_U, p_eps, V, gam
         rkept = load(fstring, "rkept")
     end
 
-    return energies, diffs, QN, rkept
+    return energies, QN, rkept
 end
-energies, diffs, QN, rkept = load_data_QN_NonHerm_npots(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise);
+energies, QN, rkept = load_data_QN_NonHerm_npots(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise);
 # -------------------------------------------------------------
 
 #------------------------------------------------------------
+
+## THE FOLLOWING FUNCTIONS ARE USED FOR COMPARING THE NON-COUPLED MODEL
+## TO THE TIGHT BINDING CHAIN
+
 # Tight binding model comparison 
 function plot_lowest_flow_realORimag(energies::Array, rkept::Array, do_real::Bool=true)
     PyPlot.rc("mathtext", fontset="stix")
@@ -1675,111 +1507,5 @@ function plot_single_iteration(energies, rkept, mb_vals, L)#.+rand(Normal(0,1e-1
     legend(fontsize=10, loc="upper right", ncol=2)
     return flow
 end
-plot_single_iteration(energies, rkept, (mb_vals[1:D]), L)
-##-------------------------------------
-flow = plot_lowest_flow(energies, rkept);
-axhline.(real.(mb_vals[1:D]), linestyle="--", color="grey");  #, alpha=0.4) 
-figure(2)
-axhline.(imag.(mb_vals[1:D]), linestyle="--", color="grey");  #, alpha=0.4) 
-
-##-----------------------------------
-# Tune potential
-
-function construct_mb_vals(L::Int, lambda::Float64, V::Float64, gamma::Float64, tparam::Float64=1.0)
-    #L = 50 # Number of iterations (wilson chain of length L+1)
-    #lambda = 3.0    # Logarthmic discretisation parameter (>1)
-
-    H = tb_ham_NH_complex(L, V, gamma, tparam)
-    svals = eigvals(H)
-    svals = sort(vcat(svals, svals), by=x -> (real(x), imag(x))) # every level can be filled by 2 electrons (spin up & down)
-
-    D = 1e4
-    mb_vals = get_lowest_mb_vals(svals, D)
-    mb_vals .-= mb_vals[1]
-    mb_vals .*= lambda^((L - 0) / 2)
-    mb_vals = sort(unique(mb_vals), by=x -> real(x))
-
-    return mb_vals
-end
-
-function eval_diff(nrg_evals, tuner::Array)
-    mb_vals = construct_mb_vals(L, lambda, tuner[1], tuner[2], tuner[3])
-    mb_vals = unique(real.(mb_vals))#[1:D]
-    for j in 1:length(mb_vals)-1
-        if abs(mb_vals[j+1] - mb_vals[j]) < 1e-2
-            mb_vals[j+1] = mb_vals[j]
-        end
-    end
-    mb_vals = unique(real.(mb_vals))[1:D]
-
-    #nrg_evals = unique(real.(nrg_evals))[1:D]
-
-    return norm(nrg_evals .- mb_vals)
-end
-D = 20
-
-nrg_evals = real.(flow[lmax+1, :])
-nrg_evals = unique(real.(nrg_evals))#[1:D]
-for j in 1:length(nrg_evals)-1
-    if abs(nrg_evals[j+1] - nrg_evals[j]) < 1e-1
-        nrg_evals[j+1] = nrg_evals[j]
-    end
-end
-nrg_evals = unique(real.(nrg_evals))[1:D]
-
-
-using Optim
-
-L = 40
-t(b) = eval_diff(nrg_evals, b)
-b0 = [1.0, 1.0, 1.0]
-res = optimize(t, b0)
-#res = bboptimize(t, b0, SearchRange=(-2.0,2.0), NumDimensions=2)
-min_d = Optim.minimum(res)
-tuner = Optim.minimizer(res)
-
-mb_vals = construct_mb_vals(L, lambda, 1.35, 0.001) #1.1, 0.9)
-#axhline.(unique(real.(mb_vals))[1:D], linestyle="--", color="grey");  #, alpha=0.4) 
-plot(unique(real.(mb_vals))[1:D], linestyle="none", marker="o", color="blue");  #, alpha=0.4) 
-plot(unique(real.(nrg_evals))[1:D], linestyle="none", marker="o", color="red");  #, alpha=0.4) 
-
-
-##-----------------------------------------
-max_r = 0.0
-max_q = 1
-max_t = 1
-l = 3
-for v in 1:36
-    (qnind1, k) = [(v, k) for (k, v) in QN if (k[1] == l + 2)][v]
-    i = qnind1
-    d = rkept[l+2, qnind1]
-    H = Matrix(Hs[i][1:d, 1:d])
-    E, L, R, orth = get_LR_eig(H)
-    #norm(L' * R - diagm(ones(d)))
-
-    R_rs = zeros(length(E))
-    L_rs = zeros(length(E))
-    for (t, e) in enumerate(E)
-        R_rs[t] = norm(H * R[:, t] - e * R[:, t])
-        r = R_rs[t]
-        if r > max_r
-            max_r = r
-            max_q = v
-            max_t = t
-        end
-        println("---------\nMax right residual for this QN = ", r)
-        L_rs[t] = norm(H' * L[:, t] - e' * L[:, t])
-        r = L_rs[t]
-        if r > max_r
-            max_r = r
-            max_q = v
-            max_t = t
-        end
-        println("Max left residual for this QN = ", r)
-    end
-    #figure(constrained_layout=true, figsize=(5.3, 4.25), dpi=150)
-    #hist(rs, bins=100);
-
-end
-println("Totat max residual = ", max_r, " at qnind1 = $max_q, eigval $max_t")
+plot_single_iteration(energies, rkept, (mb_vals[1:D]), L) 
 
