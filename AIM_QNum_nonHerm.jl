@@ -113,6 +113,7 @@ function load_pvals(arg)
     return lmax, rlim, lambda, elim, U, eps, V, magfield, gamma, n_pots, sort_type
 end 
 
+do_load = false
 
 if do_load
     lmax, rlim, lambda, elim, U, eps, V, magfield, sort_type = load_pvals(arg)
