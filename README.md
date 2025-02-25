@@ -4,7 +4,7 @@ Julia script that implements a non-Hermitian Numerical Renormalization Group (NR
 - The non-Hermitian Kondo model 
 - The non-Hermitian Anderson Impurity model.
 
-Written with _Julia v1.10._
+Written with **Julia v1.10.**
 
 Required packages:
 - LinearAlgebra
