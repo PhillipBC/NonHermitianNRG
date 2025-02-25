@@ -127,7 +127,7 @@ else
     # System params  
     U = 0.3 + 0im         # Spin-spin iteraction
     eps = -0.15 - 0.0im     # Energy of spin
-    V = 0.08 - 0.1im        # impurity coupling
+    V = 0.08 - 0.01im        # impurity coupling
     magfield = 0.0 + 0im  # Magnetic field strength 
 
     gamma = 0.0 + 0.0im # chain potential strength
@@ -673,12 +673,12 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
 
     return UM, UMd
 end
-function save_data_AIM_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise, energies, diffs, QN, rkept)
+function save_data_AIM_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, energies, diffs, QN, rkept)
     loc = "/Data/AIM/eval_flow"
     p_U = replace("$(p_U)", " " => "")
     p_eps = replace("$(p_eps)", " " => "")
     p_V = replace("$(V)", " " => "")
-    fname = "n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(p_V)_en_is_tn_gam$(gamma)_n$(n_pots)_eta$(noise)"
+    fname = "n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(p_V)_en_is_tn_gam$(gamma)_n$(n_pots)"
     if qsym == 1 && szsym == 1
         fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/NHAIM_energies_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
@@ -759,7 +759,7 @@ magfield = magfield / lambda
 # intialise the Hamiltonian elements, and get first iteration impurity e_vals
 energies, UM, UMd, eground, rmax, rkept, QN, iter_count = intialise_ham_QN_NonHerm(eps, U, magfield, szsym, qsym, iter_count, rmax, rkept);
 
-function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array, energies::Array, eground::Array, QN::Dict, iter_count::Array, numqns::Number, noise::Float64)
+function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array, energies::Array, eground::Array, QN::Dict, iter_count::Array, numqns::Number)
     # will need to keep track of eigenvector overlaps -> starts with just identity for initial orthogonal basis
     prev_UldUr = [sparse(diagm(ones(4))) for _ in 1:qnmax+1, _ in 1:qnmax+1]
 
@@ -835,12 +835,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
             d = size(H)[1]
             if d > max_dim
                 max_dim = d
-            end
-            if abs(noise) > 0 #&& l < 3
-                #t_noise = noise * (10^(-l*1.0))
-                t_noise = noise
-                H += diagm((rand(Uniform(t_noise * 0.1, t_noise), (d)))) #+ 1im * diagm((rand(Normal(0, noise), (rmax))))
-            end
+            end 
             Hs[qnind1][1:d, 1:d] = H
 
             # Store the eigenvalues in the energies array, and the eigenvectors in H
@@ -898,11 +893,11 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
     println("Maximum number of quantum number combinations = ", numqns)
     println("Maximum Hilbert space diagonalized : $max_dim")
 
-    save_data_AIM_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, noise, energies, diffs, QN, rkept)
+    save_data_AIM_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, V, gamma, energies, diffs, QN, rkept)
     return QN, iter_count, energies, rkept, diffs
 end
 
-Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground, QN, iter_count, numqns, noise)
+Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground, QN, iter_count, numqns)
 QN, iter_count, energies, rkept, diffs = Results.value 
 println("Time Taken - $(Results.time) s")
 
@@ -950,7 +945,7 @@ function plot_lowest_AIM_flow(energies::Array, rkept::Array, show_title::Bool=tr
         end
     end
     fig, (ax1, ax2) = subplots(1, 2, constrained_layout=true, figsize=(10.5, 4.25), dpi=dpi_val)
-    n_vals = md #32
+    n_vals = 32 # manuall set number of states to plot, or set to md to plot all states
     msz = 2.5
     lw = 0.01
     period = 2

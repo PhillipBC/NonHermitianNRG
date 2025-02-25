@@ -120,7 +120,7 @@ else
     elim = 1.0e20   # Maximum allowed eigenvalue during truncation  
 
     # System params 
-    J = 0.1 - 0.1im # impurity-bath interaction strength # RUN THIS NEXT
+    J = 0.3 - 0.1im # impurity-bath interaction strength # RUN THIS NEXT
     W = 0.0         # potential on site 0 of bath
     magfield = 0.0  # Sz field on impurity spin  
 
@@ -1061,7 +1061,7 @@ function plot_lowest_flow_NH(QN::Dict, energies::Array, rkept::Array, show_title
     end
     # make a 2 panel figure
     fig, (ax1, ax2) = subplots(1, 2, constrained_layout=true, figsize=(10.5, 4.25), dpi=dpi_val)
-    n_vals = md #128
+    n_vals = 32 # manuall set number of states to plot, or set to md to plot all states
     msz = 2.5
     lw = 0.0
     mrkr = "."
@@ -1095,7 +1095,7 @@ function plot_residuals(diffs)
     ls = "none"
     lw = 0.2
     plot(1:lmax+2, maximum.(eachcol(diffs)), marker="o", linestyle=ls, lw=lw, ms=3.0, label="rlim = $rlim")
-    legend(loc="upper left", fontsize=18)
+    legend(loc="lower right", fontsize=18)
     #plot(ftran_temp, (ftran_ent), marker="d", linestyle=":", label="Fortran")
     xlabel("\$n\$")
     ylabel("\$ \\max(r_n)\$")
