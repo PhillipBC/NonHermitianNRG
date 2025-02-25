@@ -44,7 +44,7 @@ Default values are provided for all parameters within the scripts.
 - `U (ComplexF64)` -- Spin-spin interaction
 - `eps (ComplexF64)` -- On-site spin energy
 - `V (ComplexF64)` -- Impurity-bath hybridization
-- `magfield (Float64)` -- Potential of zeroth bath site
+- `magfield (Float64)` -- $S^z$ field on impurity
 
 ## Output
 

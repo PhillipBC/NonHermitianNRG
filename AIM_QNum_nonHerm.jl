@@ -126,8 +126,8 @@ else
 
     # System params  
     U = 0.3 + 0im         # Spin-spin iteraction
-    eps = -0.15 - 1.0im     # Energy of spin
-    V = 0.08 - 0.0im        # impurity coupling
+    eps = -0.15 - 0.0im     # Energy of spin
+    V = 0.08 - 0.1im        # impurity coupling
     magfield = 0.0 + 0im  # Magnetic field strength 
 
     gamma = 0.0 + 0.0im # chain potential strength
@@ -150,10 +150,10 @@ else
     qsym = 0      # Enforce Q symmetry ? (1 yes, 0 no)
 end
 
-qmax = 15       # maximum Q value
-szmax = 15      # maximum Sz value
-qnmax = 200     # maximum number of QNs to loop over
-numqns = 0      # counter for number of unique QNs  
+qmax = 15       # maximum Q quantum number value
+szmax = 15      # maximum Sz quantum number value
+qnmax = 200     # maximum number of quantum number to loop over
+numqns = 0      # counter for number of unique quantum numbers 
 
 ##-------------- 
 # Storage for Hilbert space dimensions per quantum number

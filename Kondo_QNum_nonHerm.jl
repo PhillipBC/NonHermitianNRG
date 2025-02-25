@@ -120,7 +120,7 @@ else
     elim = 1.0e20   # Maximum allowed eigenvalue during truncation  
 
     # System params 
-    J = 0.1 - 0.5im # impurity-bath interaction strength # RUN THIS NEXT
+    J = 0.1 - 0.1im # impurity-bath interaction strength # RUN THIS NEXT
     W = 0.0         # potential on site 0 of bath
     magfield = 0.0  # Sz field on impurity spin  
 
@@ -136,10 +136,10 @@ p_magfield = magfield;
 szsym = 1     # Enforce Sz symmetry ? (1 yes, 0 no)
 qsym = 1      # Enforce Q symmetry ? (1 yes, 0 no)
 
-qmax = 15       # maximum Q value
-szmax = 15      # maximum Sz value
-qnmax = 200     # maximum number of QNs to loop over
-numqns = 0      # counter for number of unique QNs in the system
+qmax = 15       # maximum Q quantum number value
+szmax = 15      # maximum Sz quantum number value
+qnmax = 200     # maximum number of quantum number to loop over
+numqns = 0      # counter for number of unique quantum numbers 
 
 # Wilson chain params
 n_pots = 0      # Number of potentials
