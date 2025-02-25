@@ -3,6 +3,8 @@
     Phillip C. Burke - 2024 
     --------------------------------
     (Adapted from Andrew K. Mitchells Fortran code for Hermitian systems)
+    --------------------------------
+    This code is designed to solve the non-Hermitian Kondo mdoel with complex coupling J.
 """
 #
 using LinearAlgebra
@@ -126,8 +128,6 @@ else
     sort_type = "LowRe" # "LowMag" "LowRe" "LowReMag"
 end
 
-
-
 # store the unscaled (by lambda) values for saving data later
 p_J = J; 
 p_W = W;
@@ -195,8 +195,8 @@ function get_wilson_params_imag_Kondo(gamma::Number, lambda::Number, lmax::Numbe
 
     tn[2:lmax+2] = (0.5 * (1.0 + lambda^(-1.0))) .* (1.0 .- lambda .^ (-ns .- 1)) .*
                    ((1.0 .- lambda .^ (-2 .* ns .- 1)) .* (1.0 .- lambda .^ (-2 .* ns .- 3))) .^ (-0.5)
-    # ^^^ Equation (32) in Bulla Review, without the (lambda^(-l * 0.5)) term, incorporated elsewhere?
-    # also Equation (2.15) in Krisna-Murthy with extra terms
+    # ^^^ Equation (32) in Bulla Review, without the (lambda^(-l * 0.5)) term, incorporated elsewhere
+    # also Equation (2.15) in Krishna-Murthy with extra terms
     # This convention removes need to rescale the impurity Hamiltonian
 
     # possible potentials
@@ -207,8 +207,7 @@ function get_wilson_params_imag_Kondo(gamma::Number, lambda::Number, lmax::Numbe
         else
             en[2:lmax+2] = (1.0im * gamma) .* tn[2:lmax+2] #(lambda .^ (0.5 .- ns))
         end
-    end
-    # Hopping between impurity and Wilson chain 'zero orbital' is V (not tn).
+    end 
     # A_\lambda >> Equation (22) in Bulla -> Depends on hybridization function \Delta(\omega)
     alambda = (lambda + 1.0) / (lambda - 1.0) * log(lambda) / 2.0 
 
@@ -1019,7 +1018,7 @@ QN, iter_count, energies, rkept, diffs = Results.value
 println("Time Taken - $(Results.time) s")
 
 ##-------------------------------------------------------------------
-function plot_lowest_flow_NH(QN::Dict, energies::Array, rkept::Array, Kondo::Bool=true, show_title::Bool=true)
+function plot_lowest_flow_NH(QN::Dict, energies::Array, rkept::Array, show_title::Bool=true)
     PyPlot.rc("mathtext", fontset="stix")
     PyPlot.rc("font", family="STIXGeneral", size=23)
     dpi_val = 100
@@ -1086,7 +1085,7 @@ function plot_lowest_flow_NH(QN::Dict, energies::Array, rkept::Array, Kondo::Boo
     
     return flow, md
 end
-flow, md = plot_lowest_flow_NH(QN, energies, rkept, true, true);
+flow, md = plot_lowest_flow_NH(QN, energies, rkept, true);
 
 function plot_residuals(diffs)
     PyPlot.rc("mathtext", fontset="stix")
