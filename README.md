@@ -54,3 +54,9 @@ This can be changed to suit the users' needs by updating the relevant saving fun
 The scripts provide plotting functions for both the residuals and the eigenvalues versus iteration via the `PyPlot` package.
 These functions illustrate how to access the quantum number dictionary correctly to extract eigenvalues at the relevant iteration.
 
+## Density of states choice
+
+The flat-band density of states for the bath is used in both the Kondo and Anderson Impurity models.
+The density of states structure is encoded in the Wilson chain parameters $t_n$, $\epsilon_n$, with the flat-band parameters provided e.g., in [[Bulla 2008](https://doi.org/10.1103/RevModPhys.80.395)].
+To alter the bath density of states, one needs to change the Wilson chain parameters, e.g., to the power-law density of states for the pseudogap Kondo model [[Bulla 1997](http://dx.doi.org/10.1088/0953-8984/9/47/014)].
+
