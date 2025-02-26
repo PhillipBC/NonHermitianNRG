@@ -103,15 +103,19 @@ function load_pvals(arg)
     J = parse(ComplexF64, pvals[5]) # Spin-spin interaction
     W = pvals[6]                    # Energy of spin
     magfield = pvals[7]             # Magnetic field strength  
-    sort_type = pvals[8]            # truncation sorting method
+    
+    gamma = parse(ComplexF64, pvals[9])     # chain potential strength
+    n_pots = Integer(pvals[10])             # number of potentials 
 
-    return lmax, rlim, lambda, elim, J, W, magfield, sort_type
+    sort_type = pvals[11]                   # truncation sorting method 
+
+    return lmax, rlim, lambda, elim, J, W, magfield, gamma, n_pots, sort_type
 end 
 
 do_load = true
 
 if do_load
-    lmax, rlim, lambda, elim, J, W, magfield, sort_type = load_pvals(0)
+    lmax, rlim, lambda, elim, J, W, magfield, gamma, n_pots, sort_type = load_pvals(0)
 else
     # NRG params
     lmax = 80       # Number of iterations
@@ -123,6 +127,9 @@ else
     J = 0.3 - 0.1im # impurity-bath interaction strength # RUN THIS NEXT
     W = 0.0         # potential on site 0 of bath
     magfield = 0.0  # Sz field on impurity spin  
+
+    gamma = 0.0 + 0.0im # chain potential strength
+    n_pots = 0          # number of potentials
 
     # Sorting method to be used in truncation of complex eigenvalues
     sort_type = "LowRe" # "LowMag" "LowRe" "LowReMag"
@@ -140,10 +147,6 @@ qmax = 15       # maximum Q quantum number value
 szmax = 15      # maximum Sz quantum number value
 qnmax = 200     # maximum number of quantum number to loop over
 numqns = 0      # counter for number of unique quantum numbers 
-
-# Wilson chain params
-n_pots = 0      # Number of potentials
-gamma = 0.0     # non-herm potential parameter  
 
 ##--------------
 # Storage for Hilbert space dimensions per quantum number

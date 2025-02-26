@@ -6,7 +6,7 @@
     --------------------------------
     (Adapted from Andrew K. Mitchells Fortran code for Hermitian systems)
     --------------------------------
-    This code is designed to solve the non-Hermitian Anderson impurity model.
+    This code is designed to solve the non-Hermitian Kondo mdoel with complex coupling J.
 """
 #
 using LinearAlgebra
@@ -16,14 +16,14 @@ using GenericSchur  # High precision eigensolver
 using DelimitedFiles # For reading in parameter files
 
 prec = 128 # Set the precision (128 is twice the default)
-setprecision(BigFloat, prec) 
+setprecision(BigFloat, prec)
 
 function qn(QN::Dict, l::Number, q1::Number, q2::Number)
     # the 'get(D,x,i)' function returns the value of the key 'x' in the Dictionary 'D'
     # If there is no key 'x', then it will return the default value 'i' provided
 
     # So, return the index of the quantum number (l,q1,q2) in the QN Dict, or return 0 if it doesn't exist
-    return get(QN, (l,q1,q2), 0)
+    return get(QN, (l, q1, q2), 0)
 end
 function new_qn(QN::Dict, iter_count::Array, l::Number, q1::Number, q2::Number)
     # Take in QN as the Quantum Number Dictionary
@@ -31,19 +31,19 @@ function new_qn(QN::Dict, iter_count::Array, l::Number, q1::Number, q2::Number)
     # increase the value of last[l] by 1, and then store the new quantum number with that updated counter
     pos = iter_count[l] += 1
     # Add the quantum number to the QN Dict with value pos
-    QN[(l,q1,q2)] = pos
+    QN[(l, q1, q2)] = pos
 
     return QN, iter_count, pos
 end
 function get_LR_eig_BF(Big_A::Matrix{Complex{BigFloat}})
     # Get the left and right eigenvectors of a higher precision matrix 
-    
+
     S = schur(Big_A)
     evals = S.values
     Ur = eigvecs(S)
-    Ul = eigvecs(S, left=true) 
+    Ul = eigvecs(S, left=true)
 
-    if sort_type == "LowRe" 
+    if sort_type == "LowRe"
         e_index = sortperm(evals, by=x -> (real(x), imag(x))) # sort by real component (and then by imag)
         evals = evals[e_index]
         Ur = Ur[:, e_index]
@@ -60,7 +60,7 @@ function get_LR_eig_BF(Big_A::Matrix{Complex{BigFloat}})
         Ul = Ul[:, e_index]
     else
         throw("BAD SORT METHOD")
-    end 
+    end
 
     R_rs = zeros(BigFloat, length(evals))
     L_rs = zeros(BigFloat, length(evals))
@@ -93,7 +93,7 @@ function load_pvals_BF(arg)
     # LOAD PARAMETERS 
     # plain text file with two rows of space separated values
     # top row is the header, bottom row is the values
-    pvals, plabs = readdlm("./Inputs/AIM_input_$arg.dat", header=true) 
+    pvals, plabs = readdlm("./Inputs/Kondo_input_$arg.dat", header=true)
 
     # NRG params 
     lmax = Integer(pvals[1]) # Number of iterations
@@ -101,23 +101,22 @@ function load_pvals_BF(arg)
     lambda = BigFloat(string(pvals[3]))    # Logarthmic discretisation parameter (>1)
     elim = BigFloat(pvals[4])              # Maximum allowed eigenvalue during truncation  
     # System params
-    U = parse(Complex{BigFloat}, pvals[5])      # Spin-spin interaction
-    eps = parse(Complex{BigFloat}, pvals[6])    # Energy of spin
-    V = parse(Complex{BigFloat}, pvals[7])      # impurity coupling
-    magfield = BigFloat(pvals[8])     # Magnetic field strength
+    J = parse(Complex{BigFloat}, pvals[5])  # Spin-spin interaction
+    W = BigFloat(pvals[6])                  # Energy of spin
+    magfield = BigFloat(pvals[7])           # Magnetic field strength  
 
-    gamma = parse(Complex{BigFloat}, pvals[9])        # chain potential strength
-    n_pots = Integer(pvals[10])       # number of potentials 
+    gamma = parse(Complex{BigFloat}, pvals[8])        # chain potential strength
+    n_pots = Integer(pvals[9])       # number of potentials 
 
-    sort_type = pvals[11]          # truncation sorting method   
+    sort_type = pvals[10]          # truncation sorting method  
 
-    return lmax, rlim, lambda, elim, U, eps, V, magfield, gamma, n_pots, sort_type
+    return lmax, rlim, lambda, elim, U, eps, V, W, magfield, gamma, n_pots, sort_type
 end
-
+ 
 do_load = false
 
 if do_load
-    lmax, rlim, lambda, elim, U, eps, V, magfield, gamma, n_pots, sort_type = load_pvals_BF(0)
+    lmax, rlim, lambda, elim, U, eps, V, W, magfield, gamma, n_pots, sort_type = load_pvals_BF(0)
 else
     # NRG params  
     lmax = 20       # Number of iterations
@@ -126,38 +125,30 @@ else
     elim = BigFloat(1.0e20)      # Maximum allowed eigenvalue during truncation  
 
     # System params 
-    U = Complex{BigFloat}(1im) * -big"0.0"
-    U = big"0.3" + U 
+    J = Complex{BigFloat}(1im) * -big"0.1"
+    J = big"0.3" + J 
 
-    eps = Complex{BigFloat}(1im) * -big"0.0"
-    eps = -big"0.15" + eps 
-
-    V = Complex{BigFloat}(1im) * -big"0.01"
-    V = big"0.08" + V
+    W = Complex{BigFloat}(1im) * -big"0.0"
+    W = big"0.0" + W
 
     magfield = Complex{BigFloat}(1im) * -big"0.0"
     magfield = big"0.0" + magfield
 
     gamma = big"0.0" # potential parameter
     n_pots = 0
-    
+
     sort_type = "LowRe"
-end
+end  
 
 # store the unscaled (by lambda) values for saving data later
-p_V = round(ComplexF64(V), digits=5);
-p_eps = round(ComplexF64(eps), digits=5);
-p_U = round(ComplexF64(U), digits=5); 
+p_J = round(ComplexF64(J), digits=5);
+p_W = round(ComplexF64(W), digits=5);
+p_magfield = round(ComplexF64(magfield), digits=5);
 
 b1 = big"1.0" # BigFloat 1 for common use
 
-szsym = 1      # Enforce Sz symmetry ? (1 yes, 0 no)
-# if eps = -U/2, there is Q sym (without on-site potentials)
-if (eps == -U * 0.5) && (abs(magfield) == 0.0)
-    qsym = 1      # Enforce Q symmetry ? (1 yes, 0 no)
-else
-    qsym = 0      # Enforce Q symmetry ? (1 yes, 0 no)
-end
+szsym = 1     # Enforce Sz symmetry ? (1 yes, 0 no)
+qsym = 1      # Enforce Q symmetry ? (1 yes, 0 no)
 
 qmax = 15       # maximum Q quantum number value
 szmax = 15      # maximum Sz quantum number value
@@ -166,7 +157,6 @@ numqns = 0      # counter for number of unique quantum numbers
 
 ##-------------- 
 # Storage for Hilbert space dimensions per quantum number
-
 rmax = zeros(Int, lmax + 2, qnmax + 1);
 rmaxofk = zeros(Int, lmax + 2, qnmax + 1, 4);
 rkept = zeros(Int, lmax + 2, qnmax + 1);
@@ -206,105 +196,254 @@ M[1, 3, 4] = -b1 # |up⟩  -> |down & up⟩ = -|up & down⟩ (Minus sign from an
 
 ks = collect(-1:1:2)    # loop over the 4 basis states
 
-function get_wilson_params_imag(gamma::Number, lambda::Number, lmax::Number)
+function get_wilson_params_imag_Kondo(lambda::Number, lmax::Number) 
     # Get parameters for the wilson chain mapping, want to decrease with growing length
-    # Be careful with convention!!
-    tn = zeros(Complex{BigFloat}, lmax + 2)  # -1,0,1,2,....,lmax-1,lmax (hopping coeffs)
+    # Be careful with convention!! 
+    tn = zeros(BigFloat, lmax + 2)  # -1,0,1,2,....,lmax-1,lmax (hopping coeffs)
     en = zeros(Complex{BigFloat}, lmax + 2)  # -1,0,1,2,....,lmax-1,lmax - storage for eps params (mag fields)
     ns = collect(big"0":lmax)
 
-    tn[2:lmax+2] = (big"0.5" * (b1 + lambda^(-b1))) .* (b1 .- lambda .^ (-ns .- big"1")) .*
+    tn[2:lmax+2] = (big"0.5" * (b1 + lambda^(-b1))) .* (b1 .- lambda .^ (-ns .- b1)) .*
                    ((b1 .- lambda .^ (-big"2" .* ns .- big"1")) .* (b1 .- lambda .^ (-big"2" .* ns .- big"3"))) .^ (-big"0.5")
     # ^^^ Equation (32) in Bulla Review, without the (lambda^(-l * 0.5)) term, incorporated elsewhere?
     # also Equation (2.15) in Krisna-Murthy with extra terms
     # This convention removes need to rescale the impurity Hamiltonian 
-     
+    
     if n_pots > 0
         nse = collect(2:n_pots+1)
         if n_pots < lmax
-            en[nse] = (Complex{BigFloat}(1.0im) * gamma) .* tn[nse] 
+            en[nse] = (Complex{BigFloat}(1.0im) * gamma) .* tn[nse]
         else
-            en[2:lmax+2] = (Complex{BigFloat}(1.0im) * gamma) .* tn[2:lmax+2] 
+            en[2:lmax+2] = (Complex{BigFloat}(1.0im) * gamma) .* tn[2:lmax+2]
         end
     end
 
     # A_\lambda >> Equation (22) in Bulla -> Depends on hybridization function \Delta(\omega)
     alambda = (lambda + b1) / (lambda - b1) * log(lambda) / big"2.0"
-    # Hopping between impurity and Wilson chain 'zero orbital' is V (not tn).
-    tn[1] = sqrt(alambda / lambda) * V # Square root of lambda from iterative relation
 
-    return tn, en
+    return tn, en, alambda  
 end
-function intialise_ham_QN_NonHerm(eps::Number, U::Number, magfield::Number, szsym::Int, qsym::Int, iter_count::Array, rmax::Array, rkept::Array)
-    #= 
-        Initial Ham will initialize the following
-        > lmin = 0
-        > Will add 4 quantum number tuples (-1,q1,q2) to QN map
-        > While doing this it will also update an array rmax, that is keeping track of how many unique quantum numbers there are in the initial Hamiltonian
-        > Then it will create an energies array that stores the eigenvalues for H with just the impurity, based on their QN
-        > Does something similar for the elem matrix, which I think is storing the creation operator coefficients?
-    =#
+function intialise_ham_QN_NonHermKondo(J::Number, W::Number, magfield::Number, szsym::Int, qsym::Int, iter_count::Array, rmax::Array, rkept::Array)
     if szsym == 1
         println("---------------------------------")
-        println("Enforcing particle-hole symmetry")
+        println("Enforcing Sz symmetry (spin flip)")
     end
     if qsym == 1
         println("---------------------------------")
-        println("Enforcing spin-flip symmetry")
+        println("Enforcing Q symmetry (PHS)")
     end
     println("---------------------------------")
 
-    lmin = -1 # very first iteration -> just the impurity itself 
+    lmin = 0 # first iteration -> impurity + first site
     QN = Dict{Tuple,Number}() # intialise empty Dict
 
-    QN, iter_count, qnind1 = new_qn(QN, iter_count, lmin+2, -1, +0)  # Add (l-1,-1,0) to QN map (no charge, 0 sz spin)
-    rmax[lmin+2, qnind1] = 1                                       # Indicate that at this iteration, this quantum number has states
-    QN, iter_count, qnind1 = new_qn(QN, iter_count, lmin+2, +1, +0)  # Add (l-1,+1,0) to QN map (2 charge, 0 sz spin)
-    rmax[lmin+2, qnind1] = 1
-    QN, iter_count, qnind1 = new_qn(QN, iter_count, lmin+2, +0, -1)  # Add (l-1,0,-1) to QN map (1 charge, negative sz spin)
-    rmax[lmin+2, qnind1] = 1
-    QN, iter_count, qnind1 = new_qn(QN, iter_count, lmin+2, +0, +1)  # Add (l-1,0,+1) to QN map (1 charge, positive sz spin)
-    rmax[lmin+2, qnind1] = 1
+    basis = zeros(3, 5, 500, 2)
+    sigs = [-1, 1]
+
+    for t1 in sigs # [-1,+1] (spin impurity)
+        for t2 in ks # [-1,0,1,2] (first orbital)
+            q = abs(t2) - 1 # q number
+            sz = t1 * (2 - abs(t1)) + t2 * (2 - abs(t2)) # sz number
+
+            qnind1 = qn(QN, lmin + 2, q, sz) # get index of QN with (q,sz)
+            if qnind1 == 0 # if its not in the dict
+                QN, iter_count, qnind1 = new_qn(QN, iter_count, lmin + 2, q, sz) # add it
+            end
+            rmax[lmin+2, qnind1] += 1 # increase the dimension
+            # basis states of quantum number with index qnind1
+            basis[q+2, sz+3, rmax[lmin+2, qnind1], 1] = t1 # impurity has spin t1
+            basis[q+2, sz+3, rmax[lmin+2, qnind1], 2] = t2 # zeroth orbital has spin t2
+        end
+    end
 
     rkept[lmin+2, :] = rmax[lmin+2, :]  # rkept keeps track of number of "kept states" per iteration -> part of truncation process later
-    #println(rkept[lmin+2,:])
-
-    energies = [spzeros(Complex{BigFloat},Int(2*rlim)) for _ in 1:lmax+2, _ in 1:qnmax+1] # 2D array indexed by l,QN, with each element a 1D sparse array
+ 
+    hls = Dict{Tuple,Array}()
+    hrs = Dict{Tuple,Array}()
+    e_vals = [spzeros(Complex{BigFloat}, rlim) for _ in 1:lmax+2, _ in 1:qnmax+1] # 2D array indexed by l,QN, with each element a 1D sparse array
     eground = zeros(Complex{BigFloat}, lmax + 2)
 
-    # Set up inital eigenvalues/vectors (i.e. the diagonalized Hamiltonian)
-    # for just the impurity
-    # qn(l,q,sz) -> Check for iteration l, what index the state with
-    # electron number q1, and total spin q2 has
-    energies[lmin+2, qn(QN, lmin + 2, -1, +0)][1] = big"0.0"                      # Vaccuum energy
-    energies[lmin+2, qn(QN, lmin + 2, +1, +0)][1] = big"2.0" * eps + U              # spin up & down -> 2 electron energy
-    energies[lmin+2, qn(QN, lmin + 2, +0, -1)][1] = eps - (magfield * big"0.5")   # spin down -> 1 down electron
-    energies[lmin+2, qn(QN, lmin + 2, +0, +1)][1] = eps + (magfield * big"0.5")   # spin up   -> 1 up electron
+    # Set up inital eigenvalues/vectors (i.e. the diagonalized Hamiltonian) 
+    for q in -1:1
+        for sz in -2:2
+            qnind1 = qn(QN, lmin + 2, q, sz)
+            (qnind1 == 0) && continue
+            (rmax[lmin+2, qnind1] == 0) && continue
+            d = rmax[lmin+2, qnind1] # HS dim
+            h = zeros(Complex{BigFloat}, d, d) # construct the Hamiltonian in this QN sector
+            for r in 1:d # bra
+                # diagonal parts
+                b1s = basis[q+2, sz+3, r, 1] # spin on imp in bra
+                b2s = basis[q+2, sz+3, r, 2] # spin on orb in bra
+                if abs(b2s) == 1
+                    h[r, r] += (0.25 * J) * b1s * b2s # Sz_imp Sz_0 term
+                end
+                h[r, r] += b1s * magfield / 2.0 # Sz_imp term
+                h[r, r] += W * abs(b2s) # cj^dag cj term
+                for rp in 1:d # ket
+                    # off diagonal - S_imp S_0 term 
+                    b1p = basis[q+2, sz+3, rp, 1] # spin on imp in ket
+                    b2p = basis[q+2, sz+3, rp, 2] # spin on orb in ket
+                    # spin-up can transfer in either direction
+                    if (b1s == 1) && (b2s == -1) && (b1p == -1) && (b2p == 1) # either from impurity to zero-orb
+                        h[r, rp] += 0.5 * J
+                    end
+                    if (b1s == -1) && (b2s == 1) && (b1p == 1) && (b2p == -1) # other from zero-orb to impurity
+                        h[r, rp] += 0.5 * J
+                    end
+                end # rp
+            end # r
+            # Have H - now diagonalize it
+            #e_vals[lmin+2, qnind1][1:d], hs[(q, sz)] = eigen(h)
+            e_vals[lmin+2, qnind1][1:d], hls[(q, sz)], hrs[(q, sz)], diffs = get_LR_eig_BF(h)
+            #println("N = 0, Q = $q, 2Sz = $sz, E_N(q,sz,r) = $(e_vals[lmin+2, qnind1][1:d])")
+        end # sz
+    end # q 
+
+    # eigenvector matrix UM -> Matrix elements between impurity states : c^dagger operator
+    #UM = [spzeros(rlim, rlim) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by sigma,QN, with each element a 2D sparse array
+    UM = [spzeros(Complex{BigFloat}, 4 * maximum(rmax[lmin+2, :]), 4 * maximum(rmax[lmin+2, :])) for _ in 1:2, _ in 1:15]
+    UMd = [spzeros(Complex{BigFloat}, 4 * maximum(rmax[lmin+2, :]), 4 * maximum(rmax[lmin+2, :])) for _ in 1:2, _ in 1:15]
+
+    #qofk = abs.(ks) .- 1            # charge number is |k|-1 (-1 -> no electrons, 0 -> 1 electron, 1 -> 2 electrons)
+    #szofk = ks .* (2 .- abs.(ks))   # total sz is k*(2-|k|) (-1 -> down spin, 0 -> no spin (0 or 2 electrons), 1 -> up spin)
+
+    # Matrix elements------------------------
+    # loop over quantum numbers
+    for q in -1:1
+        for sz in -2:2
+            qnind1 = qn(QN, lmin + 2, q, sz)
+            (qnind1 == 0) && continue
+            (rmax[lmin+2, qnind1] == 0) && continue
+
+            for (s, sig) in enumerate(sigs)
+                # Quantum number of state post creation operator action
+                qnind2_cre = qn(QN, lmin + 2, q + 1, sz + sig) # look up the index of the resulting QN if the charge is increased and the spin is altered by sigma
+                # Quantum number of state post annihilation operator action
+                qnind2_ani = qn(QN, lmin + 2, q - 1, sz - sig) # look up the index of the resulting QN if the charge is decreased and the spin is altered by sigma
+
+                if (qnind2_cre != 0 && qnind2_ani != 0)
+                    (rkept[lmin+2, qnind2_cre] == 0 && rkept[lmin+2, qnind2_ani] == 0) && continue # if there were no states this iteration with said QN, then skip
+                    d1 = rmax[lmin+2, qnind1] # HS dim
+
+                    # Creation operator first
+                    d2_c = rmax[lmin+2, qnind2_cre]
+                    for r in 1:d2_c # state in bra
+                        for rp in 1:d1 # state in ket
+                            for k in 1:d2_c # component of bra
+                                for kp in 1:d1 # component of ket 
+                                    # if zero-orb has no spin in ket, has spin=sig in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == 0) && (basis[q+2+1, sz+3+sig, k, 2] == sig) 
+                                            && (basis[q+2, sz+3, kp, 1] == basis[q+2+1, sz+3+sig, k, 1]))
+                                        # then Cdagger_sig can act on ket
+                                        UM[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q + 1, sz + sig)][k, r]
+                                    end
+                                    # OR 
+                                    # if zero-orb spin is opposite of sig in ket, and is up+down in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == -sig) && (basis[q+2+1, sz+3+sig, k, 2] == 2) 
+                                            && (basis[q+2, sz+3, kp, 1] == basis[q+2+1, sz+3+sig, k, 1]))
+                                        # then Cdagger_sig can act on ket (multiplied by sig for sign from commutator, i.e. Ordering)
+                                        UM[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q + 1, sz + sig)][k, r] * sig
+                                    end
+                                end # kp
+                            end # k
+                            #
+                        end # rp
+                    end # r 
+
+                    # annihilation operator # --------------------------------------------------------- sign correct for the "*sig" part?
+                    d2_a = rmax[lmin+2, qnind2_ani]
+                    for r in 1:d2_a # state in bra
+                        for rp in 1:d1 # state in ket
+                            for k in 1:d2_a # component of bra
+                                for kp in 1:d1 # component of ket 
+                                    # if zero-orb has spin=sig in ket, has zero spin in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == sig) && (basis[q+2-1, sz+3-sig, k, 2] == 0)
+                                        && (basis[q+2, sz+3, kp, 1] == basis[q+2-1, sz+3-sig, k, 1]))
+                                        # then C_sig can act on ket 
+                                        UMd[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q - 1, sz - sig)][k, r]
+                                    end
+                                    # OR 
+                                    # if zero-orb is up+down in ket, and spin is opposite of sig in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == 2) && (basis[q+2-1, sz+3-sig, k, 2] == -sig)
+                                        && (basis[q+2, sz+3, kp, 1] == basis[q+2-1, sz+3-sig, k, 1]))
+                                        # then C_sig can act on ket (multiplied by sig for sign from commutator, i.e. Ordering)
+                                        UMd[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q - 1, sz - sig)][k, r] * sig 
+                                    end
+                                end # kp
+                            end # k
+                            #
+                        end # rp
+                    end # r  
+                elseif (qnind2_cre != 0 && qnind2_ani == 0)
+                    (rkept[lmin+2, qnind2_cre] == 0) && continue # if there were no states this iteration with said QN, then skip
+                    d1 = rmax[lmin+2, qnind1] # HS dim
+
+                    # Creation operator
+                    d2_c = rmax[lmin+2, qnind2_cre]
+                    for r in 1:d2_c # state in bra
+                        for rp in 1:d1 # state in ket
+                            #
+                            for k in 1:d2_c # component of bra
+                                for kp in 1:d1 # component of ket 
+                                    # if zero-orb has no spin in ket, has spin=sig in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == 0) && (basis[q+2+1, sz+3+sig, k, 2] == sig)
+                                        && (basis[q+2, sz+3, kp, 1] == basis[q+2+1, sz+3+sig, k, 1]))
+                                        # then Cdagger_sig can act on ket
+                                        UM[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q + 1, sz + sig)][k, r]
+                                    end
+                                    # OR 
+                                    # if zero-orb spin is opposite of sig in ket, and is up+down in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == -sig) && (basis[q+2+1, sz+3+sig, k, 2] == 2)
+                                        && (basis[q+2, sz+3, kp, 1] == basis[q+2+1, sz+3+sig, k, 1]))
+                                        # then Cdagger_sig can act on ket (multiplied by sig for sign from commutator, i.e. Ordering)
+                                        UM[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q + 1, sz + sig)][k, r] * sig
+                                    end
+                                end # kp
+                            end # k
+                            #
+                        end # rp
+                    end # r  
+                elseif (qnind2_cre == 0 && qnind2_ani != 0)
+                    (rkept[lmin+2, qnind2_ani] == 0) && continue # if there were no states this iteration with said QN, then skip
+                    d1 = rmax[lmin+2, qnind1] # HS dim
+
+                    # annihilation operator # --------------------------------------------------------- sign correct for the "*sig" part?
+                    d2_a = rmax[lmin+2, qnind2_ani]
+                    for r in 1:d2_a # state in bra
+                        for rp in 1:d1 # state in ket
+                            for k in 1:d2_a # component of bra
+                                for kp in 1:d1 # component of ket 
+                                    # if zero-orb has spin=sig in ket, has zero spin in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == sig) && (basis[q+2-1, sz+3-sig, k, 2] == 0)
+                                        && (basis[q+2, sz+3, kp, 1] == basis[q+2-1, sz+3-sig, k, 1]))
+                                        # then C_sig can act on ket 
+                                        UMd[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q - 1, sz - sig)][k, r]
+                                    end
+                                    # OR 
+                                    # if zero-orb is up+down in ket, and spin is opposite of sig in bra AND imp spin is equal in bra/ket 
+                                    if ((basis[q+2, sz+3, kp, 2] == 2) && (basis[q+2-1, sz+3-sig, k, 2] == -sig)
+                                        && (basis[q+2, sz+3, kp, 1] == basis[q+2-1, sz+3-sig, k, 1]))
+                                        # then C_sig can act on ket (multiplied by sig for sign from commutator, i.e. Ordering)
+                                        UMd[s, qnind1][r, rp] += conj(hls[(q, sz)][kp, rp]) * hrs[(q - 1, sz - sig)][k, r] * sig 
+                                    end
+                                end # kp
+                            end # k
+                            #
+                        end # rp
+                    end # r  
+                end # ifs 
+
+            end # sigma
+
+        end # sz
+    end # q 
 
     eground[lmin+2] = big"0.0" # store ground state energy 
 
-    # energies of basis states
-    # spin up/down >> eps (mag field -> - for spin down, + for spin up)
-    # empty >> 0
-    # spin up & down >> 2*eps + interaction (U)
-
-    # eigenvector matrix UM -> Matrix elements between impurity states : c^dagger operator
-    UM = [spzeros(Complex{BigFloat}, (Int(2 * rlim)), (Int(2 * rlim))) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by l,QN, with each element a 1D sparse array
-    UMd = [spzeros(Complex{BigFloat}, (Int(2 * rlim)), (Int(2 * rlim))) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by l,QN, with each element a 1D sparse array
-
-    UM[2, qn(QN, lmin + 2, +0, -1)][1, 1] = +b1 # c^dagger_up on a state with 1 down electron
-    UM[2, qn(QN, lmin + 2, -1, +0)][1, 1] = +b1 # c^dagger_up on a state with no electrons
-    UM[1, qn(QN, lmin + 2, +0, +1)][1, 1] = -b1 # c^dagger_down on a state with 1 up electron
-    UM[1, qn(QN, lmin + 2, -1, +0)][1, 1] = +b1 # c^dagger_down on a state with no electrons
-
-    UMd[2, qn(QN, lmin + 2, +0, +1)][1, 1] = +b1 # c_up on a state with 1 up electron
-    UMd[2, qn(QN, lmin + 2, +1, +0)][1, 1] = +b1 # c_up on a state with 2 electrons
-    UMd[1, qn(QN, lmin + 2, +0, -1)][1, 1] = +b1 # c_down on a state with 1 down electron
-    UMd[1, qn(QN, lmin + 2, +1, +0)][1, 1] = -b1 # c_down on a state with 2 electrons
-
     #println("rmax after intialise_ham_QN(): \n", rmax, "\n")
 
-    return energies, UM, UMd, eground, rmax, rkept, QN, iter_count
+    return e_vals, UM, UMd, eground, rmax, rkept, QN, iter_count
 end
 function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array, rmaxofk::Array, rstartk::Array, rkept::Array, l::Number, UM::Array, UMd::Array, M::Array, tn::Array, energies::Array, epsn::Array, prev_UldUr::Array)
     # Currently have qnind1 (index of state with QN=(q,sz) in the current iteration (l+2))
@@ -313,10 +452,10 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
     m = 0 # counter for diagonal terms
 
     # loop over basis states
-    for (jkp, kp) in enumerate(ks) 
+    for (jkp, kp) in enumerate(ks)
         (rmaxofk[l+2, qnind1, jkp] == 0) && continue    # if size of Hilbert space of this QN is zero, then skip to next loop step
         # get qnind2 (associated with state from previous iteration (l+1), i.e. H will link that state with the current state via their QNs)
-        qnind2 = qn(QN, l+1, q0[jkp], sz0[jkp])         # Find index of the desired QN (returns zero if there were no states with that QN in prev iteration)
+        qnind2 = qn(QN, l + 1, q0[jkp], sz0[jkp])         # Find index of the desired QN (returns zero if there were no states with that QN in prev iteration)
         (qnind2 == 0) && continue                       # if there were no states in prev iteration with desired QN, skip
 
         for (jk, k) in enumerate(ks) # loop over possible states 
@@ -348,9 +487,9 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
                         end
                     end # (r,rp) loop
                 end # non-zero M element
-                
+
             end # sigma loop
-            
+
             # diagonal elements
             #
             if k == kp
@@ -371,14 +510,14 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
 
     return H
 end
-function enforce_QN_symmetry(l::Int,  rmax::Array, energies::Array)
+function enforce_QN_symmetry(l::Int, rmax::Array, energies::Array)
     if qsym == 1
         # loop over QNs (only loop over positive q)
         for q in 1:qmax
             for sz in -szmax:szmax
                 qnind1 = qn(QN, l + 2, +q, sz) # get index of QN with +q
                 qnind2 = qn(QN, l + 2, -q, sz) # get index of QN with -q
-                if (qnind1 == 0) || (qnind2 == 0) || (rmax[l+2,qnind1] == 0) || (rmax[l+2,qnind2] == 0) # check there are states
+                if (qnind1 == 0) || (qnind2 == 0) || (rmax[l+2, qnind1] == 0) || (rmax[l+2, qnind2] == 0) # check there are states
                     continue
                 end
                 # first replace the +q state eval with the average of the ±q state evals
@@ -438,12 +577,12 @@ function truncate_QN(l::Int, QN::Dict, rmax::Array, rkept::Array, energies::Arra
     elseif sort_type == "LowImag"
         E = E[sortperm(E, by=x -> (imag(x), real(x)))] # sort by lowest imag part
     else
-        throw("Error: Incompatible sort_type parameter passed to truncation scheme. \nAccepts only 'LowRe' and 'LowMag' ")
+        throw("Error: Incompatible sort_type parameter passed to truncation scheme. \nAccepts: 'LowRe' , 'LowMag' , 'LowReMag' , 'LowImag'")
     end
     eground[l+2] = E[1] # store the ground state energy for this iteration
 
     println("Length(E) = $(length(E))")
-    println("|E[1]| = $(abs(E[1])), |E[end]| = $(abs(E[length(E)])) =>> Rescale by ground state")
+    println("|E[1]| = $(abs(E[1])), |E[end]| = $(abs(E[length(E)]))")
 
     # Now subtract the ground state energy from all eigenvalues -----------------------------------------------------------
     for qnind1 in [v for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
@@ -458,7 +597,7 @@ function truncate_QN(l::Int, QN::Dict, rmax::Array, rkept::Array, energies::Arra
     if sort_type == "LowReMag"
         E = E[sortperm(E, by=x -> abs(x))] # sort by absolute value
     end
-
+    
     # Truncation by total number of states below ecut with no clumps: -----------------------------------------------------
     # Keep all the states if there are less of them than the limit, rlim
     rtot = min(rlim, sum(rmax[l+2, :]))
@@ -487,11 +626,12 @@ function truncate_QN(l::Int, QN::Dict, rmax::Array, rkept::Array, energies::Arra
     # are not approximately equal to this eigenvalue, and update the point if they are
 
     #if sort_type == "LowRe"
+
     if (rtot < sum(rmax[l+2, :]) - 1) && (abs(E[rtot+1] - E[rtot]) <= 1e-16) # check if current truncation point is in a clump of approximately equal eigenvalues
         println("rtot = $rtot -> CLUMP")
-        r = findfirst(x -> abs(E[x+1] - E[x]) > 1e-12, rtot+1:sum(rmax[l+2, :])-1) # if so, find the end of the clump
+        r = findfirst(x -> abs(E[x+1] - E[x]) > 1e-16, rtot+1:sum(rmax[l+2, :])-1) # if so, find the end of the clump
         rtot = rtot + (r) # make this the truncation point
-        #println("rtot = $rtot")
+        println("rtot = $rtot")
     end
     #elseif sort_type == "LowMag" || sort_type == "LowReMag"
     #    if (rtot < sum(rmax[l+2, :]) - 1) && (abs(E[rtot+1] - E[rtot]) <= 1e-6) # check if current truncation point is in a clump of approximately equal eigenvalues
@@ -512,6 +652,7 @@ function truncate_QN(l::Int, QN::Dict, rmax::Array, rkept::Array, energies::Arra
     if sort_type == "LowRe"
         ecut = real(E[rtot])
         println("ECUT = $ecut @ index = $rtot")
+
         rkept[l+2, :] = rmax[l+2, :] # keep track of states we will keep
         for qnind1 in [v for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
             for r in 1:rmax[l+2, qnind1]
@@ -523,15 +664,31 @@ function truncate_QN(l::Int, QN::Dict, rmax::Array, rkept::Array, energies::Arra
                 end
             end # r loop
         end # q
-    elseif sort_type == "LowReMag" || sort_type == "LowMag"
+    elseif sort_type == "LowImag"
+        ecut = imag(E[rtot])
+        println("ECUT = $ecut @ index = $rtot")
+
+        rkept[l+2, :] = rmax[l+2, :] # keep track of states we will keep
+        for qnind1 in [v for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
+            for r in 1:rmax[l+2, qnind1]
+                # if the energy is above the ecut bound we previously determined
+                if (imag(energies[l+2, qnind1][r]) > ecut)
+                    #println("CUT HAPPENED")
+                    rkept[l+2, qnind1] = r - 1 # then we don't keep this state, set its value to zero in the rkept array
+                    break # break out of the inner for loop
+                end
+            end # r loop
+        end # q
+    elseif sort_type == "LowMag" || sort_type == "LowReMag" #|| sort_type == "LowImag"
         ecut = abs(E[rtot])
         println("ECUT = $ecut @ index = $rtot")
+
         rkept[l+2, :] = rmax[l+2, :] # keep track of states we will keep
         for qnind1 in [v for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
             for r in 1:rmax[l+2, qnind1]
                 # if the energy is above the ecut bound we previously determined
                 if (abs(energies[l+2, qnind1][r]) > ecut)
-                    #println("CUT HAPPENED")
+                    #println("CUT HAPPENED @ $(r-1)")
                     rkept[l+2, qnind1] = r - 1 # then we don't keep this state, set its value to zero in the rkept array
                     break # break out of the inner for loop
                 end
@@ -548,15 +705,15 @@ end
 function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::Array, rstartk::Array, M::Array, hr::Array, hl::Array, prev_UldUr::Array)
     # matrix elements of c+_{l,sigma}, where sigma=-1 is down-spin and sigma=+1 is up-spin.
     # NOTE: only calculate matrix elements between KEPT states.
-    UM = [spzeros(Complex{BigFloat}, Int(2 * rlim), Int(2 * rlim)) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by sigma, QN, with each element a 1D sparse array
-    UMd = [spzeros(Complex{BigFloat}, Int(2 * rlim), Int(2 * rlim)) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by sigma, QN, with each element a 1D sparse array
-    
+    UM = [spzeros(Complex{BigFloat}, 4 * maximum(rmax[l+2, :]), 4 * maximum(rmax[l+2, :])) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by sigma, QN, with each element a 1D sparse array
+    UMd = [spzeros(Complex{BigFloat}, 4 * maximum(rmax[l+2, :]), 4 * maximum(rmax[l+2, :])) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by sigma, QN, with each element a 1D sparse array
+
     qofk = abs.(ks) .- 1            # charge number is |k|-1 (-1 -> no electrons, 0 -> 1 electron, 1 -> 2 electrons)
     szofk = ks .* (2 .- abs.(ks))   # total sz is k*(2-|k|) (-1 -> down spin, 0 -> no spin (0 or 2 electrons), 1 -> up spin)
 
     sigs = [-1, 1]
 
-    for (q,sz,qnind1) in [(k[2],k[3],v) for (k, v) in QN if (k[1] == l+2)] # find all the keys in QN at iteration l
+    for (q, sz, qnind1) in [(k[2], k[3], v) for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
         (rkept[l+2, qnind1] == 0) && continue # if no states with this QN were "kept" (or if the QN isnt in the map) then move on.
 
         for (sig, sigma) in enumerate(sigs)
@@ -564,20 +721,20 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
             qnind2_cre = qn(QN, l + 2, q + 1, sz + sigma) # look up the index of the resulting QN if the charge is increased and the spin is altered by sigma
             # Quantum number of state post annihilation operator action
             qnind2_ani = qn(QN, l + 2, q - 1, sz - sigma) # look up the index of the resulting QN if the charge is decreased and the spin is altered by sigma
-            
+
             # then either both are possible transitions, or just one, or none
             if (qnind2_cre != 0 && qnind2_ani != 0)
                 (rkept[l+2, qnind2_cre] == 0 && rkept[l+2, qnind2_ani] == 0) && continue # if there were no states this iteration with said QN, then skip
                 # loop over the states via k,kp
                 for (jk, k) in enumerate(ks)#
                     # quanutm number of state from previous iteration that must have existed for us to get to these states
-                    prev_qnind2_cre = qn(QN, l + 1, q + 1 - qofk[jk], sz + sigma - szofk[jk]) 
+                    prev_qnind2_cre = qn(QN, l + 1, q + 1 - qofk[jk], sz + sigma - szofk[jk])
                     prev_qnind2_ani = qn(QN, l + 1, q - 1 - qofk[jk], sz - sigma - szofk[jk])
                     for (jkp, kp) in enumerate(ks)
                         prev_qnind1 = qn(QN, l + 1, q - qofk[jkp], sz - szofk[jkp])
                         # If the states will have non-zero overlap, and the states being considered appear in this QN sector
                         if (M[sig, jkp, jk]) != 0 && (rmaxofk[l+2, qnind2_cre, jk] != 0) && (rmaxofk[l+2, qnind1, jkp] != 0)
-                            
+
                             # Store the matrix product (M[k,kp] * (Udagger * U)) in UM 
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_cre], rp in 1:rkept[l+2, qnind1]
@@ -586,8 +743,8 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                                     #sp = s
                                     #println("$(UldUr[qnind2_cre][s,sp])")
                                     UM[sig, qnind1][r, rp] += (M[sig, jkp, jk]*
-                                                            conj(hl[qnind2_cre][rstartk[l+2, qnind2_cre, jk]+s, r])*
-                                                            (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_cre, prev_qnind1][s, sp])[1]
+                                                               conj(hl[qnind2_cre][rstartk[l+2, qnind2_cre, jk]+s, r])*
+                                                               (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_cre, prev_qnind1][s, sp])[1]
                                 end # s, sp loop
                             end # r, rp loop
                         end # if check
@@ -597,7 +754,7 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_ani], rp in 1:rkept[l+2, qnind1]
                                 # loop over eigenstate overlaps
-                                for s in 1:rmaxofk[l+2, qnind2_ani, jk] , sp in 1:rmaxofk[l+2, qnind1, jkp]
+                                for s in 1:rmaxofk[l+2, qnind2_ani, jk], sp in 1:rmaxofk[l+2, qnind1, jkp]
                                     #sp = s
                                     #println("$(UldUr[qnind2_ani][s,sp])")
                                     UMd[sig, qnind1][r, rp] += (M[sig, jk, jkp]*
@@ -613,7 +770,7 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                 (rkept[l+2, qnind2_cre] == 0) && continue # if there were no states this iteration with said QN, then skip
                 # loop over the states via k,kp
                 for (jk, k) in enumerate(ks)
-                    prev_qnind2_cre = qn(QN, l + 1, q + 1 - qofk[jk], sz + sigma - szofk[jk]) 
+                    prev_qnind2_cre = qn(QN, l + 1, q + 1 - qofk[jk], sz + sigma - szofk[jk])
                     for (jkp, kp) in enumerate(ks)
                         prev_qnind1 = qn(QN, l + 1, q - qofk[jkp], sz - szofk[jkp])
                         # If the states will have non-zero overlap, and the states being considered appear in this QN sector
@@ -621,12 +778,12 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_cre], rp in 1:rkept[l+2, qnind1]
                                 # loop over eigenstate overlaps
-                                for s in 1:rmaxofk[l+2, qnind2_cre, jk] , sp in 1:rmaxofk[l+2, qnind1, jkp]
+                                for s in 1:rmaxofk[l+2, qnind2_cre, jk], sp in 1:rmaxofk[l+2, qnind1, jkp]
                                     #sp = s
                                     #println("------------\n$(UldUr[qnind2_cre][s,sp])")
                                     UM[sig, qnind1][r, rp] += (M[sig, jkp, jk]*
-                                                                conj(hl[qnind2_cre][rstartk[l+2, qnind2_cre, jk]+s, r])*
-                                                                (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_cre, prev_qnind1][s, sp])[1]
+                                                               conj(hl[qnind2_cre][rstartk[l+2, qnind2_cre, jk]+s, r])*
+                                                               (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_cre, prev_qnind1][s, sp])[1]
                                 end # s, sp loop
                             end # r, rp loop
                         end # if check
@@ -645,7 +802,7 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_ani], rp in 1:rkept[l+2, qnind1]
                                 # loop over eigenstate overlaps
-                                for s in 1:rmaxofk[l+2, qnind2_ani, jk] , sp in 1:rmaxofk[l+2, qnind1, jkp]
+                                for s in 1:rmaxofk[l+2, qnind2_ani, jk], sp in 1:rmaxofk[l+2, qnind1, jkp]
                                     #sp = s
                                     #println("$(UldUr[qnind2_ani][s,sp])")
                                     UMd[sig, qnind1][r, rp] += (M[sig, jk, jkp]*
@@ -664,114 +821,121 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
     end # q
 
     return UM, UMd
-end 
-function save_data_AIM_BF_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, p_V, gamma, energies, diffs, QN, rkept)
+end
+function save_data_QN_BF_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfield, gamma, energies, diffs, QN, rkept)
+    p_J = round(ComplexF64(p_J), digits=10)
+    lambda = round(ComplexF64(lambda), digits=3)
+    p_W = round(ComplexF64(p_W), digits=3) 
+    p_magfield = round(ComplexF64(p_magfield), digits=3) 
+    if imag(p_J) >= 0.0 
+        s_J = "$(real(p_J))p$(imag(p_J))im"
+    else
+        s_J = "$(real(p_J))m$(abs(imag(p_J)))im"
+    end
+    fname = "n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_J$(s_J)_W$(p_W)_zf$(p_magfield))"
     loc = "/Data/BF_eval_flow"
-    p_U = replace("$(p_U)", " " => "")
-    p_eps = replace("$(p_eps)", " " => "")
-    p_V = replace("$(p_V)", " " => "")
-    fname = "n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_U$(p_U)_eps$(p_eps)_V$(p_V)_gam$(gamma)_n$(n_pots)"
+
     if qsym == 1 && szsym == 1
-        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/NHAIM_energies_$(fname)"
+        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_energies_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
 
-        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/NHAIM_diffs_$(fname)"
+        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_diffs_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
 
-        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/NHAIM_QN_$(fname)"
+        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
 
-        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/NHAIM_rkept_$(fname)"
+        fstring = "$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_rkept_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "rkept", rkept)
     elseif szsym == 1 && qsym != 1
-        fstring = "$(loc)/Sz_conserved/$(sort_type)/NHAIM_energies_$(fname)"
+        fstring = "$(loc)/Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_energies_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
 
-        fstring = "$(loc)/Sz_conserved/$(sort_type)/NHAIM_diffs_$(fname)"
+        fstring = "$(loc)/Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_diffs_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
 
-        fstring = "$(loc)/Sz_conserved/$(sort_type)/NHAIM_QN_$(fname)"
+        fstring = "$(loc)/Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
 
-        fstring = "$(loc)/Sz_conserved/$(sort_type)/NHAIM_rkept_$(fname)"
+        fstring = "$(loc)/Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_rkept_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "rkept", rkept)
     elseif szsym != 1 && qsym == 1
-        fstring = "$(loc)/Q_conserved/$(sort_type)/NHAIM_energies_$(fname)"
+        fstring = "$(loc)/Q_conserved/$(sort_type)/Kondo_NHNRG_QNs_energies_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
 
-        fstring = "$(loc)/Q_conserved/$(sort_type)/NHAIM_diffs_$(fname)"
+        fstring = "$(loc)/Q_conserved/$(sort_type)/Kondo_NHNRG_QNs_diffs_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
 
-        fstring = "$(loc)/Q_conserved/$(sort_type)/NHAIM_QN_$(fname)"
+        fstring = "$(loc)/Q_conserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
 
-        fstring = "$(loc)/Q_conserved/$(sort_type)/NHAIM_rkept_$(fname)"
+        fstring = "$(loc)/Q_conserved/$(sort_type)/Kondo_NHNRG_QNs_rkept_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "rkept", rkept)
     else
-        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/NHAIM_energies_$(fname)"
+        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/Kondo_NHNRG_QNs_energies_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "energies", energies)
 
-        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/NHAIM_diffs_$(fname)"
+        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/Kondo_NHNRG_QNs_diffs_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
 
-        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/NHAIM_QN_$(fname)"
+        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
 
-        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/NHAIM_rkept_$(fname)"
+        fstring = "$(loc)/Q_Sz_nonconserved/$(sort_type)/Kondo_NHNRG_QNs_rkept_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "rkept", rkept)
     end
 end
 
 # An array to keep track of the last position for each value of 'l' - Initialized to zero.
-iter_count = zeros(Int,lmax+2);
+iter_count = zeros(Int, lmax + 2);
 
 # Get wilson chain params
-tn, en = get_wilson_params_imag(gamma, lambda, lmax); # for flat band
+tn, en, alambda = get_wilson_params_imag_Kondo(lambda, lmax); # for flat band
 # Due to rescaling of Hamiltonian at each step, need to rescale parameters of H_0 also!
-eps = eps / lambda;
-U = U / lambda;
-magfield = magfield / lambda
+J = J * alambda / sqrt(lambda)
+magfield = magfield / sqrt(lambda)
+W = W * alambda / sqrt(lambda)
 
 # intialise the Hamiltonian elements, and get first iteration impurity e_vals
-energies, UM, UMd, eground, rmax, rkept, QN, iter_count = intialise_ham_QN_NonHerm(eps, U, magfield, szsym, qsym, iter_count, rmax, rkept);
+energies, UM, UMd, eground, rmax, rkept, QN, iter_count = intialise_ham_QN_NonHermKondo(J, W, magfield, szsym, qsym, iter_count, rmax, rkept);
 
 function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array, energies::Array, eground::Array, QN::Dict, iter_count::Array, numqns::Number)
     # will need to keep track of eigenvector overlaps -> starts with just identity for initial orthogonal basis
-    prev_UldUr = [sparse(diagm(ones(Complex{BigFloat}, 4))) for _ in 1:qnmax+1, _ in 1:qnmax+1]
+    prev_UldUr = [sparse(diagm(ones(8))) for _ in 1:qnmax+1, _ in 1:qnmax+1]
 
     max_dim = 4 # keeping track of largest matrix diagonalized
-    
+
     #  ks = {-1,0,1,2}
-    qofk = abs.(ks) .- 1           # charge number is |k|-1 (-1 -> no electrons, 0 -> 1 electron, 1 -> 2 electrons)
+    qofk = abs.(ks) .- 1            # charge number is |k|-1 (-1 -> no electrons, 0 -> 1 electron, 1 -> 2 electrons)
     szofk = ks .* (2 .- abs.(ks))   # total sz is k*(2-|k|) (-1 -> down spin, 0 -> no spin (0 or 2 electrons), 1 -> up spin)
 
     q0 = zeros(Int, 4) # storage for q and sz values of previous iteration
     sz0 = zeros(Int, 4)
- 
+
     diffs = spzeros(qnmax + 1, lmax + 2) # 2D array indexed by l,QN, with each element a 1D sparse array
-    eground = zeros(Complex{BigFloat}, lmax + 2)
+    eground = zeros(ComplexF64, lmax + 2)
 
     # perform lmax iterations
-    for l in 0:lmax
+    for l in 1:lmax
         lQN = length(QN)
         if (l) % 1 == 0
-            println("--------------------------------------\nIteration $l") 
+            println("--------------------------------------\nIteration $l ") 
         end
         # Assign QN indices to QNs and define Hilbert spaces for this iteration:
         # > loop over quantum numbers
@@ -781,7 +945,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
                 # which combine with added site (labelled k) to give current QN, q and sz
                 q0 = q .- qofk      # The q that a state from the previous iteration must have had to end up in this state when the new site was added
                 sz0 = sz .- szofk   # same for sz
-                
+
                 # size of (kept) Hilbert space of previous iteration, with QN q0(k) and sz0(k)
                 running_HS = 0          # keeps tracking of cumulative Hilbert space size (will +1 later to account for 1 indexing )
                 rstartk_temp = zeros(Int, 4) # keeps track of starting indices of Hilbert space sector (as does not get updated with final running update)
@@ -789,7 +953,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
 
                 for (jk) in eachindex(ks)    # for the 4 possible states the new site can be in
                     tmp_qn = qn(QN, l + 1, q0[jk], sz0[jk]) # quantum number of state (from prev iteration)
-                    if tmp_qn !=0
+                    if tmp_qn != 0
                         rmaxofk_temp[jk] = rkept[l+1, tmp_qn] # update this index with the number of states from the previous iteration with this desired QN 
                         rstartk_temp[jk] = running_HS    # store running value before its updated (Starting index for this Hilbert space sector)
                         running_HS += rmaxofk_temp[jk]   # update running with the number of states we found (possibly zero) -> Total size of Hilbert space processed so far
@@ -803,63 +967,62 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
                 # OTHERWISE -------------------------------------------------------------
                 # Add current QN to QN map at this iteration l
                 QN, iter_count, qnind1 = new_qn(QN, iter_count, l + 2, q, sz)
-                
-                # size of current Hilbert space, with QN q and sz
-                rstartk[l+2,qnind1,:] = rstartk_temp[:] # store the starting indices of this QN Hilbert space sectors permanently for this iteration 
-                rmaxofk[l+2,qnind1,:] = rmaxofk_temp[:] # store the sizes of this QN Hilbert space sectors permanently for this iteration 
-                rmax[l+2,qnind1] = sum(rmaxofk_temp[:]) # store the total size of the Hilbert space sectors permanently for this iteration 
+
+                # size of current Hfnameilbert space, with QN q and sz
+                rstartk[l+2, qnind1, :] = rstartk_temp[:] # store the starting indices of this QN Hilbert space sectors permanently for this iteration 
+                rmaxofk[l+2, qnind1, :] = rmaxofk_temp[:] # store the sizes of this QN Hilbert space sectors permanently for this iteration 
+                rmax[l+2, qnind1] = sum(rmaxofk_temp[:]) # store the total size of the Hilbert space sectors permanently for this iteration 
                 #println("rmax[$(l),:] after updating with rmaxofk_temp: \n", rmax[l+2,:], "\n")
             end # sz loop 
         end # q loop
-        # Make an empty Hamiltonian for each quantum number
-        hr = [spzeros(Complex{BigFloat}, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (right eigenvector storage)
-        hl = [spzeros(Complex{BigFloat}, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (left eigenvector storage)
-        Hs = [spzeros(Complex{BigFloat}, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (left eigenvector storage)
         # Generate Hamiltonian and diagonalize:
         # loop over quantum numbers
-        UldUr = [spzeros(Complex{BigFloat}, 4 * maximum(rmax[l+2, :]), 4 * maximum(rmax[l+2, :])) for _ in 1:qnmax+1, _ in 1:qnmax+1] # 1D array indexed by QN, wdiagm(ones(rlim)) #max(rmax[l+2, qnind1], rmax[l+2, qnind2]))) #ith each element a 2D sparse array
-        for (q,sz,qnind1) in [(k[2],k[3],v) for (k, v) in QN if (k[1] == l+2)] # find all the keys in QN at iteration l
+        # Make an empty Hamiltonian for each quantum number
+        hr = [spzeros(ComplexF64, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (right eigenvector storage)
+        hl = [spzeros(ComplexF64, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (left eigenvector storage)
+        #Hs = [spzeros(ComplexF64, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (left eigenvector storage)
+        UldUr = [spzeros(ComplexF64, 4 * maximum(rmax[l+2, :]), 4 * maximum(rmax[l+2, :])) for _ in 1:qnmax+1, _ in 1:qnmax+1] # 1D array indexed by QN, wdiagm(ones(rlim)) #max(rmax[l+2, qnind1], rmax[l+2, qnind2]))) #ith each element a 2D sparse array
+        for (q, sz, qnind1) in [(k[2], k[3], v) for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
             q0 = q .- qofk[:]      # The q that a state from the previous iteration must have had to end up in this state when the new site was added
             sz0 = sz .- szofk[:]   # same for sz
 
-            # Construct Hamiltonian matrix:
+            # construct Hamiltonian matrix:
             H = get_iter_Ham_QN_NonHerm(qnind1, q0, sz0, rmax, rmaxofk, rstartk, rkept, l, UM, UMd, M, tn, energies, en, prev_UldUr)
             d = size(H)[1]
             if d > max_dim
                 max_dim = d
-            end
-            
-            # Store the eigenvalues in the energies array, and the eigenvectors in H
-            Hs[qnind1][1:d,1:d] = H
-            energies[l+2, qnind1][1:d], hl[qnind1][1:d, 1:d], hr[qnind1][1:d, 1:d], diffs[qnind1, l+2] = get_LR_eig_BF(H) 
+            end 
 
+            # Store the eigenvalues in the energies array, and the eigenvectors in H
+            energies[l+2, qnind1][1:d], hl[qnind1][1:d, 1:d], hr[qnind1][1:d, 1:d], diffs[qnind1, l+2] = get_LR_eig_BF(H)
+ 
             # Update the overlap matrix for the next iteration
             for (k2, qnind2) in [(k2, v) for (k2, v) in QN if (k2[1] == l + 2)]
                 UldUr[qnind2, qnind1] = hl[qnind2][1:d, 1:d]' * hr[qnind1][1:d, 1:d]
             end
 
-        end # q loop
+        end # q loop 
 
-        # Enforce symmetries  
         energies = enforce_QN_symmetry(l, rmax, energies)
 
         # Truncate the eigenvalues (via the rkept array)
         energies, eground, rkept, ecut = truncate_QN(l, QN, rmax, rkept, energies, eground)
-        
+
         if (l) % 1 == 0
-            println("Total states generated at this iteration : ", sum(rmax[l+2,:]))
+            println("Total states generated at this iteration : ", sum(rmax[l+2, :]))
             println("Energy cutoff for truncation : ", ecut)
-            println("Kept states : ", sum(rkept[l+2,:]))
+            println("Kept states : ", sum(rkept[l+2, :]))
             println("\n--------------------------------------------------------------------------------")
         end 
 
-        # Calculate new matrix elements -> M[k,kp] * Udagger * U (From Notes)
-        # For use in next iterative diagonalization step (Ham construction)
-        if l!=lmax
-            println("Updating overlap matrix for next iteration")
+        if l != lmax
+            # Calculate new matrix elements -> M[k,kp] * Udagger * U (From Notes)
+            # For use in next iterative diagonalization step (Ham construction)
             UM, UMd = update_UM_QN_NonHerm_diffQNs(l, QN, rkept, rmaxofk, rstartk, M, hr, hl, prev_UldUr)
-            # Update the overlap matrix for the next iteration 
-            prev_UldUr = [spzeros(Complex{BigFloat}, rlim, rlim) for _ in 1:length(QN)-lQN, _ in 1:length(QN)-lQN]
+
+            # Update the overlap matrix for the next iteration
+            #prev_UldUr = deepcopy(UldUr)
+            prev_UldUr = [spzeros(ComplexF64, rlim, rlim) for _ in 1:length(QN)-lQN, _ in 1:length(QN)-lQN]
             for (k1, qnind1) in [(k1, v) for (k1, v) in QN if (k1[1] == l + 2)] # find all the keys in QN at iteration l
                 for (k2, qnind2) in [(k2, v) for (k2, v) in QN if (k2[1] == l + 2)]
                     prev_UldUr[qnind2, qnind1] = UldUr[qnind2, qnind1]
@@ -868,31 +1031,29 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
         end
         # How many QN combinations were created in this iteration?
         m = 0
-        for (q,sz,qnind1) in [(k[2],k[3],v) for (k, v) in QN if (k[1] == l+2)] # find all the keys in QN at iteration l
-            if (rmax[l+2,qnind1] > 0) 
+        for (q, sz, qnind1) in [(k[2], k[3], v) for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
+            if (rmax[l+2, qnind1] > 0)
                 m += 1 # if there was a state with this QN, then increase counter
-            end 
+            end
         end # q
-        if (m>numqns)
+        if (m > numqns)
             numqns = m # if the number of QNs created this iteration exceeded the previous max record, increase the record.
         end
 
     end # l loop
     println("Maximum number of quantum number combinations = ", numqns)
-    println("Maximum Hilbert space diagonalized : $max_dim") 
- 
-    save_data_AIM_BF_NonHerm(lmax, rlim, lambda, elim, p_U, p_eps, p_V, gamma, energies, diffs, QN, rkept)
-                            
+    println("Maximum Hilbert space diagonalized : $max_dim")
+
+    save_data_QN_BF_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfield, gamma, energies, diffs, QN, rkept)
     return QN, iter_count, energies, rkept, diffs
 end
 
 Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground, QN, iter_count, numqns)
 QN, iter_count, energies, rkept, diffs = Results.value 
-println("Time Taken - $(Results.time) s") 
-
-#
-#-------------------------------------------- 
-function plot_lowest_AIM_flow(QN, energies, rkept, show_title::Bool=true)
+println("Time Taken - $(Results.time)s")
+ 
+##------------------------------------------------------------------- 
+function plot_lowest_Kondo_flow(QN, energies, rkept, show_title::Bool=true)
     PyPlot.rc("mathtext", fontset="stix")
     PyPlot.rc("font", family="STIXGeneral", size=23)
     dpi_val = 100
@@ -943,8 +1104,7 @@ function plot_lowest_AIM_flow(QN, energies, rkept, show_title::Bool=true)
     ax1.set_ylabel("Re(\$E\$)")
     ax1.set_ylim(-0.1, 3)
     if show_title
-        ax1.set_title("\$U = $p_U\$, \$\\epsilon = $p_eps\$", fontsize=14)
-        ax2.set_title("\$V = $p_V\$ -  ($rlim kept)", fontsize=14)
+        ax1.set_title("\$J = $(p_J)\$ ($rlim kept)", fontsize=14)
     end
 
     for j in 1:n_vals
@@ -957,7 +1117,7 @@ function plot_lowest_AIM_flow(QN, energies, rkept, show_title::Bool=true)
 
     return flow
 end
-flow = plot_lowest_AIM_flow(QN, energies, rkept, true); 
+flow = plot_lowest_Kondo_flow(QN, energies, rkept, true);
 
 function plot_residuals(diffs)
     PyPlot.rc("mathtext", fontset="stix")
