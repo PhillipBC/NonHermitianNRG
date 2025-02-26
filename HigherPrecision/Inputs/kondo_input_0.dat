@@ -1,0 +1,2 @@
+lmax	rlim	lambda	elim	J	            W	    magfield    gamma       n_pots      sort_type
+80 	    200 	3.0	    1e20	0.3-0.1im       0.0	    0.0	        0.0-0.0im   0           LowRe
