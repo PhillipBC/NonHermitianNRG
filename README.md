@@ -11,8 +11,8 @@ The rest of the script is general and performs the iterative construction of the
 
 Similarly in `AIM_QNum_nonHerm.jl` for the Anderson Impurity model.
 
-In all scripts, parameters can be loaded by changing the variable `do_load` to `true` in the script, and providing a correctly structured parameter file (see comments within the `load_pvals(...)` function). 
-Default values are provided for all parameters within the scripts.
+In all scripts, parameters can be loaded by setting the variable `do_load` to `true` in the script, and providing a correctly structured parameter file such as the two provided in the Inputs folder. 
+Default values are also provided for all parameters within the scripts.
 
 ## Required packages
 

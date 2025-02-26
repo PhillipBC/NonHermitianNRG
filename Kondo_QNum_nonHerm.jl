@@ -92,7 +92,7 @@ function load_pvals(arg)
     # LOAD PARAMETERS 
     # plain text file with two rows of space separated values
     # top row is the header, bottom row is the values
-    pvals, plabs = readdlm("./kondo_input_$arg.dat", header=true) 
+    pvals, plabs = readdlm("./Inputs/kondo_input_$arg.dat", header=true) 
 
     # NRG params
     lmax = Integer(pvals[1]) # Number of iterations
@@ -108,7 +108,7 @@ function load_pvals(arg)
     return lmax, rlim, lambda, elim, J, W, magfield, sort_type
 end 
 
-do_load = false
+do_load = true
 
 if do_load
     lmax, rlim, lambda, elim, J, W, magfield, sort_type = load_pvals(0)
@@ -1018,6 +1018,10 @@ QN, iter_count, energies, rkept, diffs = Results.value
 println("Time Taken - $(Results.time) s")
 
 ##-------------------------------------------------------------------
+# Plotting the data - Here we use PyPlot, which is a Julia wrapper for Matplotlib
+# one can also use Plots.jl, which is a Julia plotting package that can use PyPlot as a backend
+using PyPlot
+
 function plot_lowest_flow_NH(QN::Dict, energies::Array, rkept::Array, show_title::Bool=true)
     PyPlot.rc("mathtext", fontset="stix")
     PyPlot.rc("font", family="STIXGeneral", size=23)

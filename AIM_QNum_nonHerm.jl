@@ -92,7 +92,7 @@ function load_pvals(arg)
     # LOAD PARAMETERS 
     # plain text file with two rows of space separated values
     # top row is the header, bottom row is the values
-    pvals, plabs = readdlm("./AIM_input_$arg.dat", header=true) 
+    pvals, plabs = readdlm("./Inputs/AIM_input_$arg.dat", header=true) 
  
     # NRG params
     lmax = Integer(pvals[1]) # Number of iterations
@@ -113,10 +113,10 @@ function load_pvals(arg)
     return lmax, rlim, lambda, elim, U, eps, V, magfield, gamma, n_pots, sort_type
 end 
 
-do_load = false
+do_load = true
 
 if do_load
-    lmax, rlim, lambda, elim, U, eps, V, magfield, sort_type = load_pvals(arg)
+    lmax, rlim, lambda, elim, U, eps, V, magfield, gamma, n_pots, sort_type = load_pvals(0)
 else 
     # NRG params
     lmax = 80         # Number of iterations
