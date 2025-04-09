@@ -1,2 +1,2 @@
-lmax	rlim	lambda	elim    U	        eps	            V	            magfield	gamma           n_pots	sort_type
-80  	200 	3.0	    1e20	0.3-0.0im	-0.15-0.0im	    0.08-0.01im	    0.0	        0.0-0.0im	    0       LowRe
+lmax	rlim	lambda	elim    U	        eps	            V	            magfield	gamma           n_pots	sort_type   disorder
+80  	200 	3.0	    1e20	0.3-0.0im	-0.15-0.0im	    0.08-0.01im	    0.0	        0.0-0.0im	    0       LowRe       0.0

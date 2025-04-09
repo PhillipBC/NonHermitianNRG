@@ -32,6 +32,7 @@ function new_qn(QN::Dict, iter_count::Array, l::Int, q1::Int, q2::Int)
 end
 function get_LR_eig(A::Matrix)
     # Get the left and right eigenvectors of a square matrix A
+    # Returns the eigenvalues, left eigenvectors, right eigenvectors, the maximum residual, and the deviation from bi-orthonormality
  
     # Schur decomposition
     S = schur(A)
@@ -57,36 +58,43 @@ function get_LR_eig(A::Matrix)
     else
         throw("BAD SORT METHOD")
     end
-    diff = 0.0
+
     # keeping track of residuals (accuracy of eigensolver)
-    R_rs = zeros(length(evals))
-    L_rs = zeros(length(evals))
     max_r = 0.0
     for (t, e) in enumerate(evals)
         # Evaluate ||H|E⟩ - E|E⟩||
-        R_rs[t] = norm(A * Ur[:, t] - e * Ur[:, t]) 
+        R_r = norm(A * Ur[:, t] - e * Ur[:, t]) 
         # keep track of the largest residual
-        if R_rs[t] > max_r
-            max_r = R_rs[t]
+        if R_r > max_r
+            max_r = R_r
         end
-        L_rs[t] = norm(A' * Ul[:, t] - e' * Ul[:, t]) 
-        if L_rs[t] > max_r
-            max_r = L_rs[t]
+        L_r = norm(A' * Ul[:, t] - e' * Ul[:, t]) 
+        if L_r > max_r
+            max_r = L_r
         end
-    end
-    diff = max_r
-    if diff > 1e-10
+    end 
+    if max_r > 1e-10
         println("!!!!!!!!!!!!!!!!!")
-        println("Maximum residual = $diff")
+        println("Maximum residual = $max_r")
         println("!!!!!!!!!!!!!!!!!\nNon-negligble residual...")
         println("!!!!!!!!!!!!!!!!!")
     end
 
     # "Bi-normalize" the eigenvectors for projection operator to be the identity
     LR = 1 ./ (diag(Ul' * Ur)) # inverse of common eigenvector overlaps (inside QN sector so should be zero degeneracies)
-    Ul = LR' .* Ul # multiplies the conjugate of jth element of LR by the jth column of Ul  
+    Ul = LR' .* Ul # multiplies the conjugate of jth element of LR by the jth column of Ul 
+    
+    # We want our basis to be bi-orthonormal, so we need to check that the left and right eigenvectors are orthonormal to each other
+    Id = diagm(ones(length(evals))) # identity matrix
+    biorth = norm(Ul' * Ur - Id) # check the bi-orthonormality of the eigenvectors
+    if biorth > 1e-12
+        println("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
+        println("Bi-orthogonalilty check failed: |Ul' * Ur - Id| = $biorth")
+        println("Consider using higher precision (approximate degeneracies), or adding small diagonal disorder to remove exact degeneracies")
+        println("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
+    end
 
-    return evals, Ul, Ur, diff
+    return evals, Ul, Ur, max_r, biorth
 end
 function load_pvals(arg) 
     # LOAD PARAMETERS 
@@ -104,18 +112,20 @@ function load_pvals(arg)
     W = pvals[6]                    # Energy of spin
     magfield = pvals[7]             # Magnetic field strength  
     
-    gamma = parse(ComplexF64, pvals[9])     # chain potential strength
-    n_pots = Integer(pvals[10])             # number of potentials 
+    gamma = parse(ComplexF64, pvals[8])     # chain potential strength
+    n_pots = Integer(pvals[9])             # number of potentials 
 
-    sort_type = pvals[11]                   # truncation sorting method 
+    sort_type = pvals[10]                   # truncation sorting method
+    
+    disorder = pvals[11]
 
-    return lmax, rlim, lambda, elim, J, W, magfield, gamma, n_pots, sort_type
+    return lmax, rlim, lambda, elim, J, W, magfield, gamma, n_pots, sort_type, disorder
 end 
 
-do_load = true
+do_load = false
 
 if do_load
-    lmax, rlim, lambda, elim, J, W, magfield, gamma, n_pots, sort_type = load_pvals(0)
+    lmax, rlim, lambda, elim, J, W, magfield, gamma, n_pots, sort_type, disorder = load_pvals(0)
 else
     # NRG params
     lmax = 80       # Number of iterations
@@ -124,7 +134,7 @@ else
     elim = 1.0e20   # Maximum allowed eigenvalue during truncation  
 
     # System params 
-    J = 0.3 - 0.1im # impurity-bath interaction strength # RUN THIS NEXT
+    J = 0.2 - 0.1im # impurity-bath interaction strength # RUN THIS NEXT
     W = 0.0         # potential on site 0 of bath
     magfield = 0.0  # Sz field on impurity spin  
 
@@ -133,13 +143,17 @@ else
 
     # Sorting method to be used in truncation of complex eigenvalues
     sort_type = "LowRe" # "LowMag" "LowRe" "LowReMag"
+
+    # Diagonal disorder
+    disorder = 1e-7 # disorder strength (0.0 = no disorder)
 end
 
 # store the unscaled (by lambda) values for saving data later
 p_J = J; 
 p_W = W;
 p_magfield = magfield;
-#
+
+# Enforce symmetries
 szsym = 1     # Enforce Sz symmetry ? (1 yes, 0 no)
 qsym = 1      # Enforce Q symmetry ? (1 yes, 0 no)
 
@@ -448,7 +462,7 @@ function intialise_ham_QN_NonHermKondo(J::Number, W::Number, magfield::Number, s
 
     return e_vals, UM, UMd, eground, rmax, rkept, QN, iter_count, hs
 end
-function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array, rmaxofk::Array, rstartk::Array, rkept::Array, l::Number, UM::Array, UMd::Array, M::Array, tn::Array, energies::Array, epsn::Array, prev_UldUr::Array)
+function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array, rmaxofk::Array, rstartk::Array, rkept::Array, l::Number, UM::Array, UMd::Array, M::Array, tn::Array, energies::Array, epsn::Array)
     # Currently have qnind1 (index of state with QN=(q,sz) in the current iteration (l+2))
     H = zeros(ComplexF64, rmax[l+2, qnind1], rmax[l+2, qnind1])
     sigs = [-1, 1] # spins down/up
@@ -469,12 +483,9 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
                 if !iszero(M[s, jk, jkp])
                     # loop over eigenstates with this qn
                     for r in 1:rmaxofk[l+2, qnind1, jk], rp in 1:rmaxofk[l+2, qnind1, jkp]
-                        # loop over eigenstate inner products
-                        for rpp in findall(x -> !iszero(x), prev_UldUr[qnind2, qnind2][:, rp]) #1:rmaxofk[l+2,qnind1,jkp]
-                            #rpp = rp
-                            H[rstartk[l+2, qnind1, jk]+r, rstartk[l+2, qnind1, jkp]+rp] +=
-                                tn[l+1] * M[s, jk, jkp] * ((-1)^k) * UM[s, qnind2][r, rp] * prev_UldUr[qnind2, qnind2][rpp, rp]
-                        end
+                        # loop over eigenstate inner products 
+                        H[rstartk[l+2, qnind1, jk]+r, rstartk[l+2, qnind1, jkp]+rp] +=
+                            tn[l+1] * M[s, jk, jkp] * ((-1)^k) * UM[s, qnind2][r, rp] 
                     end # (r,rp) loop
                 end # non-zero M element
 
@@ -482,12 +493,8 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
                 if !iszero(M[s, jkp, jk])
                     # loop over eigenstates with this qn
                     for r in 1:rmaxofk[l+2, qnind1, jk], rp in 1:rmaxofk[l+2, qnind1, jkp]
-                        # loop over eigenstate inner products
-                        for rpp in findall(x -> !iszero(x), prev_UldUr[qnind2, qnind2][:, rp]) #1:rmaxofk[l+2,qnind1,jkp]
-                            #rpp = rp
-                            H[rstartk[l+2, qnind1, jk]+r, rstartk[l+2, qnind1, jkp]+rp] +=
-                                tn[l+1] * M[s, jkp, jk] * ((-1)^kp) * UMd[s, qnind2][r, rp] * prev_UldUr[qnind2, qnind2][rpp, rp]
-                        end
+                        H[rstartk[l+2, qnind1, jk]+r, rstartk[l+2, qnind1, jkp]+rp] +=
+                                tn[l+1] * M[s, jkp, jk] * ((-1)^kp) * UMd[s, qnind2][r, rp] 
                     end # (r,rp) loop
                 end # non-zero M element
 
@@ -497,12 +504,9 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
             #
             if k == kp
                 # diagonal elements (not necessarily diagonal for Non Herm)
-                for r in 1:rkept[l+1, qnind2]
-                    for rp in 1:rkept[l+1, qnind2]
-                        #rp = r
-                        # m is used to keep track of where in the super space we are (r is the subspace)
-                        H[r+m, rp+m] = (sqrt(lambda) * energies[l+1, qnind2][rp] + abs(k) * epsn[l+2]) * prev_UldUr[qnind2, qnind2][r, rp] # abs(k) counts the number of electrons in the state and applies that many epsilons
-                    end # rp
+                for r in 1:rkept[l+1, qnind2] 
+                    # m is used to keep track of where in the super space we are (r is the subspace)
+                    H[r+m, r+m] = (sqrt(lambda) * energies[l+1, qnind2][r] + abs(k) * epsn[l+2]) # abs(k) counts the number of electrons in the state and applies that many epsilons
                 end # r
                 m += rkept[l+1, qnind2] # increase m by this subspace dimension so the next update starts at the end of this update
             end
@@ -674,7 +678,7 @@ function truncate_QN(l::Int, QN::Dict, rmax::Array, rkept::Array, energies::Arra
 
     return energies, eground, rkept, ecut
 end
-function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::Array, rstartk::Array, M::Array, hr::Array, hl::Array, prev_UldUr::Array)
+function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::Array, rstartk::Array, M::Array, hr::Array, hl::Array)
     # matrix elements of c+_{l,sigma}, where sigma=-1 is down-spin and sigma=+1 is up-spin.
     # NOTE: only calculate matrix elements between KEPT states.
     UM = [spzeros(ComplexF64, 4 * maximum(rmax[l+2, :]), 4 * maximum(rmax[l+2, :])) for _ in 1:2, _ in 1:qnmax+1] # 2D array indexed by sigma, QN, with each element a 1D sparse array
@@ -699,9 +703,7 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                 (rkept[l+2, qnind2_cre] == 0 && rkept[l+2, qnind2_ani] == 0) && continue # if there were no states this iteration with said QN, then skip
                 # loop over the states via k,kp
                 for (jk, k) in enumerate(ks)#
-                    # quanutm number of state from previous iteration that must have existed for us to get to these states
-                    prev_qnind2_cre = qn(QN, l + 1, q + 1 - qofk[jk], sz + sigma - szofk[jk])
-                    prev_qnind2_ani = qn(QN, l + 1, q - 1 - qofk[jk], sz - sigma - szofk[jk])
+                    # quanutm number of state from previous iteration that must have existed for us to get to these states 
                     for (jkp, kp) in enumerate(ks)
                         prev_qnind1 = qn(QN, l + 1, q - qofk[jkp], sz - szofk[jkp])
                         # If the states will have non-zero overlap, and the states being considered appear in this QN sector
@@ -711,13 +713,11 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_cre], rp in 1:rkept[l+2, qnind1]
                                 # loop over eigenstate overlaps
-                                for s in 1:rmaxofk[l+2, qnind2_cre, jk], sp in 1:rmaxofk[l+2, qnind1, jkp]
-                                    #sp = s
-                                    #println("$(UldUr[qnind2_cre][s,sp])")
+                                for s in 1:rmaxofk[l+2, qnind2_cre, jk] 
                                     UM[sig, qnind1][r, rp] += (M[sig, jkp, jk]*
                                                                conj(hl[qnind2_cre][rstartk[l+2, qnind2_cre, jk]+s, r])*
-                                                               (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_cre, prev_qnind1][s, sp])[1]
-                                end # s, sp loop
+                                                               (hr[qnind1][rstartk[l+2, qnind1, jkp]+s, rp]))[1]
+                                end # s loop
                             end # r, rp loop
                         end # if check
 
@@ -726,13 +726,11 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_ani], rp in 1:rkept[l+2, qnind1]
                                 # loop over eigenstate overlaps
-                                for s in 1:rmaxofk[l+2, qnind2_ani, jk], sp in 1:rmaxofk[l+2, qnind1, jkp]
-                                    #sp = s
-                                    #println("$(UldUr[qnind2_ani][s,sp])")
+                                for s in 1:rmaxofk[l+2, qnind2_ani, jk]  
                                     UMd[sig, qnind1][r, rp] += (M[sig, jk, jkp]*
                                                                 conj(hl[qnind2_ani][rstartk[l+2, qnind2_ani, jk]+s, r])*
-                                                                (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_ani, prev_qnind1][s, sp])[1]
-                                end # s, sp loop
+                                                                (hr[qnind1][rstartk[l+2, qnind1, jkp]+s, rp]))[1]
+                                end # s loop
                             end # r, rp loop
                         end # if check
 
@@ -741,22 +739,18 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
             elseif (qnind2_cre != 0 && qnind2_ani == 0)
                 (rkept[l+2, qnind2_cre] == 0) && continue # if there were no states this iteration with said QN, then skip
                 # loop over the states via k,kp
-                for (jk, k) in enumerate(ks)
-                    prev_qnind2_cre = qn(QN, l + 1, q + 1 - qofk[jk], sz + sigma - szofk[jk])
-                    for (jkp, kp) in enumerate(ks)
-                        prev_qnind1 = qn(QN, l + 1, q - qofk[jkp], sz - szofk[jkp])
+                for (jk, k) in enumerate(ks) 
+                    for (jkp, kp) in enumerate(ks) 
                         # If the states will have non-zero overlap, and the states being considered appear in this QN sector
                         if (M[sig, jkp, jk]) != 0 && (rmaxofk[l+2, qnind2_cre, jk] != 0) && (rmaxofk[l+2, qnind1, jkp] != 0)
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_cre], rp in 1:rkept[l+2, qnind1]
                                 # loop over eigenstate overlaps
-                                for s in 1:rmaxofk[l+2, qnind2_cre, jk], sp in 1:rmaxofk[l+2, qnind1, jkp]
-                                    #sp = s
-                                    #println("------------\n$(UldUr[qnind2_cre][s,sp])")
+                                for s in 1:rmaxofk[l+2, qnind2_cre, jk]  
                                     UM[sig, qnind1][r, rp] += (M[sig, jkp, jk]*
                                                                conj(hl[qnind2_cre][rstartk[l+2, qnind2_cre, jk]+s, r])*
-                                                               (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_cre, prev_qnind1][s, sp])[1]
-                                end # s, sp loop
+                                                               (hr[qnind1][rstartk[l+2, qnind1, jkp]+s, rp]))[1]
+                                end # s loop
                             end # r, rp loop
                         end # if check
 
@@ -765,22 +759,18 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
             elseif (qnind2_cre == 0 && qnind2_ani != 0)
                 (rkept[l+2, qnind2_ani] == 0) && continue # if there were no states this iteration with said QN, then skip
                 # loop over the states via k,kp
-                for (jk, k) in enumerate(ks)
-                    prev_qnind2_ani = qn(QN, l + 1, q - 1 - qofk[jk], sz - sigma - szofk[jk])
-                    for (jkp, kp) in enumerate(ks)
-                        prev_qnind1 = qn(QN, l + 1, q - qofk[jkp], sz - szofk[jkp])
+                for (jk, k) in enumerate(ks) 
+                    for (jkp, kp) in enumerate(ks) 
                         if (M[sig, jk, jkp]) != 0 && (rmaxofk[l+2, qnind2_ani, jk] != 0) && (rmaxofk[l+2, qnind1, jkp] != 0)
                             # Store the matrix product (M[k,kp] * (Udagger * U)) in UM 
                             # loop over kept states
                             for r in 1:rkept[l+2, qnind2_ani], rp in 1:rkept[l+2, qnind1]
                                 # loop over eigenstate overlaps
-                                for s in 1:rmaxofk[l+2, qnind2_ani, jk], sp in 1:rmaxofk[l+2, qnind1, jkp]
-                                    #sp = s
-                                    #println("$(UldUr[qnind2_ani][s,sp])")
+                                for s in 1:rmaxofk[l+2, qnind2_ani, jk] 
                                     UMd[sig, qnind1][r, rp] += (M[sig, jk, jkp]*
                                                                 conj(hl[qnind2_ani][rstartk[l+2, qnind2_ani, jk]+s, r])*
-                                                                (hr[qnind1][rstartk[l+2, qnind1, jkp]+sp, rp])*prev_UldUr[prev_qnind2_ani, prev_qnind1][s, sp])[1]
-                                end # s, sp loop
+                                                                (hr[qnind1][rstartk[l+2, qnind1, jkp]+s, rp]))[1]
+                                end # s loop
                             end # r, rp loop
                         end # if check
 
@@ -788,19 +778,18 @@ function update_UM_QN_NonHerm_diffQNs(l::Int, QN::Dict, rkept::Array, rmaxofk::A
                 end # k
             end
 
-        end # sigma
-        #println("UMd = Um' ? ", norm(Umd[1, qnind1] - Um[1, qnind1]'))
+        end # sigma 
     end # q
 
     return UM, UMd
 end
-function save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfield, gamma, energies, diffs, QN, rkept)
+function save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfield, gamma, disorder, energies, diffs, QN, rkept, biorths)
     if imag(p_J) >= 0.0 
         s_J = "$(real(p_J))p$(imag(p_J))im"
     else
         s_J = "$(real(p_J))m$(abs(imag(p_J)))im"
     end
-    fname = "n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_J$(s_J)_W$(p_W)_zf$(p_magfield)"
+    fname = "n$(lmax)_r$(rlim)_Lam$(lambda)_elim$(elim)_J$(s_J)_W$(p_W)_zf$(p_magfield)_g$(gamma)_eta$(disorder)"
     loc = "/Data/eval_flow"
     if qsym == 1 && szsym == 1
         fstring = "/$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_energies_$(fname)"
@@ -810,6 +799,10 @@ function save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfiel
         fstring = "/$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_diffs_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
+
+        fstring = "/$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_biorths_$(fname)"
+        fstring = "." * replace(fstring, "." => "_") * ".jld2"
+        save(fstring, "biorths", biorths)
 
         fstring = "/$(loc)/Q_Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
@@ -827,6 +820,10 @@ function save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfiel
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
 
+        fstring = "/$(loc)/Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_biorths_$(fname)"
+        fstring = "." * replace(fstring, "." => "_") * ".jld2"
+        save(fstring, "biorths", biorths)
+
         fstring = "/$(loc)/Sz_conserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
@@ -843,6 +840,10 @@ function save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfiel
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
 
+        fstring = "/$(loc)/Q_conserved/$(sort_type)/Kondo_NHNRG_QNs_biorths_$(fname)"
+        fstring = "." * replace(fstring, "." => "_") * ".jld2"
+        save(fstring, "biorths", biorths)
+
         fstring = "/$(loc)/Q_conserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "QN", QN)
@@ -858,6 +859,10 @@ function save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfiel
         fstring = "/$(loc)/Q_Sz_nonconserved/$(sort_type)/Kondo_NHNRG_QNs_diffs_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
         save(fstring, "diffs", diffs)
+
+        fstring = "/$(loc)/Q_Sz_nonconserved/$(sort_type)/Kondo_NHNRG_QNs_biorths_$(fname)"
+        fstring = "." * replace(fstring, "." => "_") * ".jld2"
+        save(fstring, "biorths", biorths)
 
         fstring = "/$(loc)/Q_Sz_nonconserved/$(sort_type)/Kondo_NHNRG_QNs_QN_$(fname)"
         fstring = "." * replace(fstring, "." => "_") * ".jld2"
@@ -882,10 +887,7 @@ W = W * alambda / sqrt(lambda)
 # intialise the Hamiltonian elements, and get first iteration impurity e_vals
 energies, UM, UMd, eground, rmax, rkept, QN, iter_count, hs = intialise_ham_QN_NonHermKondo(J, W, magfield, szsym, qsym, iter_count, rmax, rkept);
 
-function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array, energies::Array, eground::Array, QN::Dict, iter_count::Array, numqns::Number)
-    # will need to keep track of eigenvector overlaps -> starts with just identity for initial orthogonal basis
-    prev_UldUr = [sparse(diagm(ones(8))) for _ in 1:qnmax+1, _ in 1:qnmax+1]
-
+function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array, energies::Array, eground::Array, QN::Dict, iter_count::Array, numqns::Number, disorder::Number)
     max_dim = 4 # keeping track of largest matrix diagonalized
 
     #  ks = {-1,0,1,2}
@@ -896,6 +898,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
     sz0 = zeros(Int, 4)
 
     diffs = spzeros(qnmax + 1, lmax + 2) # 2D array indexed by l,QN, with each element a 1D sparse array
+    biorths = spzeros(qnmax + 1, lmax + 2) # 2D array indexed by l,QN, with each element a 1D sparse array
     eground = zeros(ComplexF64, lmax + 2)
 
     # perform lmax iterations
@@ -948,26 +951,25 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
         hr = [spzeros(ComplexF64, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (right eigenvector storage)
         hl = [spzeros(ComplexF64, maximum(rmax[l+2, :]), maximum(rmax[l+2, :])) for _ in 1:qnmax+1] # 1D array indexed by QN, with each element a 2D sparse array (left eigenvector storage)
         
-        UldUr = [spzeros(ComplexF64, 4 * maximum(rmax[l+2, :]), 4 * maximum(rmax[l+2, :])) for _ in 1:qnmax+1, _ in 1:qnmax+1] # 1D array indexed by QN, wdiagm(ones(rlim)) #max(rmax[l+2, qnind1], rmax[l+2, qnind2]))) #ith each element a 2D sparse array
         for (q, sz, qnind1) in [(k[2], k[3], v) for (k, v) in QN if (k[1] == l + 2)] # find all the keys in QN at iteration l
             q0 = q .- qofk[:]      # The q that a state from the previous iteration must have had to end up in this state when the new site was added
             sz0 = sz .- szofk[:]   # same for sz
 
             # construct Hamiltonian matrix:
-            H = get_iter_Ham_QN_NonHerm(qnind1, q0, sz0, rmax, rmaxofk, rstartk, rkept, l, UM, UMd, M, tn, energies, en, prev_UldUr)
+            H = get_iter_Ham_QN_NonHerm(qnind1, q0, sz0, rmax, rmaxofk, rstartk, rkept, l, UM, UMd, M, tn, energies, en)
             d = size(H)[1]
             if d > max_dim
                 max_dim = d
             end 
 
-            # Store the eigenvalues in the energies array, and the eigenvectors in H
-            energies[l+2, qnind1][1:d], hl[qnind1][1:d, 1:d], hr[qnind1][1:d, 1:d], diffs[qnind1, l+2] = get_LR_eig(H) 
-
-            # Update the overlap matrix for the next iteration
-            for (k2, qnind2) in [(k2, v) for (k2, v) in QN if (k2[1] == l + 2)]
-                UldUr[qnind2, qnind1] = hl[qnind2][1:d, 1:d]' * hr[qnind1][1:d, 1:d]
+            #add disorder to the Hamiltonian matrix
+            if abs(disorder) > 0.0
+                # samples disorder from a uniform distribution between disorder*0.1 and disorder
+                H += diagm((rand(Uniform(disorder * 0.1, disorder), (d))))
             end
 
+            # Store the eigenvalues in the energies array, and the eigenvectors in H
+            energies[l+2, qnind1][1:d], hl[qnind1][1:d, 1:d], hr[qnind1][1:d, 1:d], diffs[qnind1, l+2], biorths[qnind1, l+2] = get_LR_eig(H) 
         end # q loop
 
         # Enforce symmetries  
@@ -987,15 +989,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
         if l != lmax
             # Calculate new matrix elements -> M[k,kp] * Udagger * U (From Notes)
             # For use in next iterative diagonalization step (Ham construction)
-            UM, UMd = update_UM_QN_NonHerm_diffQNs(l, QN, rkept, rmaxofk, rstartk, M, hr, hl, prev_UldUr)
-
-            # Update the overlap matrix for the next iteration 
-            prev_UldUr = [spzeros(ComplexF64, rlim, rlim) for _ in 1:length(QN)-lQN, _ in 1:length(QN)-lQN]
-            for (k1, qnind1) in [(k1, v) for (k1, v) in QN if (k1[1] == l + 2)] # find all the keys in QN at iteration l
-                for (k2, qnind2) in [(k2, v) for (k2, v) in QN if (k2[1] == l + 2)]
-                    prev_UldUr[qnind2, qnind1] = UldUr[qnind2, qnind1]
-                end
-            end
+            UM, UMd = update_UM_QN_NonHerm_diffQNs(l, QN, rkept, rmaxofk, rstartk, M, hr, hl) 
         end
         # How many QN combinations were created in this iteration?
         m = 0
@@ -1012,12 +1006,12 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
     println("Maximum number of quantum number combinations = ", numqns)
     println("Maximum Hilbert space diagonalized : $max_dim")
 
-    save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfield, gamma, energies, diffs, QN, rkept)
-    return QN, iter_count, energies, rkept, diffs
+    save_data_QN_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfield, gamma, disorder, energies, diffs, QN, rkept, biorths)
+    return QN, iter_count, energies, rkept, diffs, biorths
 end
 
-Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground, QN, iter_count, numqns)
-QN, iter_count, energies, rkept, diffs = Results.value
+Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground, QN, iter_count, numqns, disorder)
+QN, iter_count, energies, rkept, diffs, biorths = Results.value
 println("Time Taken - $(Results.time) s")
 
 ##-------------------------------------------------------------------
@@ -1068,7 +1062,7 @@ function plot_lowest_flow_NH(QN::Dict, energies::Array, rkept::Array, show_title
     end
     # make a 2 panel figure
     fig, (ax1, ax2) = subplots(1, 2, constrained_layout=true, figsize=(10.5, 4.25), dpi=dpi_val)
-    n_vals = 32 # manuall set number of states to plot, or set to md to plot all states
+    n_vals = 64 # manuall set number of states to plot, or set to md to plot all states
     msz = 2.5
     lw = 0.0
     mrkr = "."
@@ -1105,8 +1099,25 @@ function plot_residuals(diffs)
     legend(loc="lower right", fontsize=18)
     #plot(ftran_temp, (ftran_ent), marker="d", linestyle=":", label="Fortran")
     xlabel("\$n\$")
-    ylabel("\$ \\max(r_n)\$")
+    ylabel("\$ \\max_q(r_n)\$")
     yscale("log")
     #legend()
 end
 plot_residuals(diffs)
+
+function plot_biorth_metric(biorths)
+    PyPlot.rc("mathtext", fontset="stix")
+    PyPlot.rc("font", family="STIXGeneral", size=23)
+    dpi_val = 100
+    figure(constrained_layout=true, dpi=dpi_val, figsize=(6.5, 4.7))
+    ls = "none"
+    lw = 0.2
+    plot(1:lmax+2, maximum.(eachcol(biorths)), marker="o", linestyle=ls, lw=lw, ms=3.0, label="rlim = $rlim")
+    legend(loc="lower right", fontsize=18)
+    #plot(ftran_temp, (ftran_ent), marker="d", linestyle=":", label="Fortran")
+    xlabel("\$n\$")
+    ylabel("\$ \\max_q(|U^{L\\dagger}U^R - I|)\$")
+    yscale("log")
+    #legend()
+end
+plot_biorth_metric(biorths)
