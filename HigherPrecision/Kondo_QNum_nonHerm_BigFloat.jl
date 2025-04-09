@@ -60,25 +60,22 @@ function get_LR_eig_BF(Big_A::Matrix{Complex{BigFloat}})
         Ul = Ul[:, e_index]
     else
         throw("BAD SORT METHOD")
-    end
-
-    R_rs = zeros(BigFloat, length(evals))
-    L_rs = zeros(BigFloat, length(evals))
+    end 
+    
     max_r = 0.0
     for (t, e) in enumerate(evals)
-        R_rs[t] = norm(Big_A * Ur[:, t] - e * Ur[:, t])
-        if R_rs[t] > max_r
-            max_r = R_rs[t]
+        R_r = norm(Big_A * Ur[:, t] - e * Ur[:, t])
+        if R_r > max_r
+            max_r = R_r
         end
-        L_rs[t] = norm(Big_A' * Ul[:, t] - e' * Ul[:, t])
-        if L_rs[t] > max_r
-            max_r = L_rs[t]
+        L_r = norm(Big_A' * Ul[:, t] - e' * Ul[:, t])
+        if L_r > max_r
+            max_r = L_r
         end
-    end
-    diff = max_r #max( maximum(R_rs), maximum(L_rs))
-    if diff > 1e-16
+    end 
+    if max_r > 1e-20
         println("!!!!!!!!!!!!!!!!!")
-        println("Maximum residual = $diff")
+        println("Maximum residual = $max_r")
         println("!!!!!!!!!!!!!!!!!\nNon-negligble residual...")
         println("!!!!!!!!!!!!!!!!!")
     end
@@ -87,7 +84,17 @@ function get_LR_eig_BF(Big_A::Matrix{Complex{BigFloat}})
     LR = big"1.0" ./ (diag(Ul' * Ur)) # inverse of common eigenvector overlaps 
     Ul = LR' .* Ul # multiplies the conjugate of jth element of LR by the jth column of Ul 
 
-    return evals, Ul, Ur, diff
+    # We want our basis to be bi-orthonormal, so we need to check that the left and right eigenvectors are orthonormal to each other
+    Id = diagm(ones(BigFloat, length(evals))) # identity matrix
+    biorth = norm(Ul' * Ur - Id) # check the bi-orthonormality of the eigenvectors
+    if biorth > 1e-20
+        println("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
+        println("Bi-orthogonalilty check failed: |Ul' * Ur - Id| = $biorth")
+        println("Consider using higher precision (approximate degeneracies), or adding small diagonal disorder to remove exact degeneracies")
+        println("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
+    end
+
+    return evals, Ul, Ur, max_r, biorth
 end 
 function load_pvals_BF(arg)
     # LOAD PARAMETERS 
@@ -110,13 +117,15 @@ function load_pvals_BF(arg)
 
     sort_type = pvals[10]          # truncation sorting method  
 
-    return lmax, rlim, lambda, elim, U, eps, V, W, magfield, gamma, n_pots, sort_type
+    disorder = BigFloat(pvals[11]) # disorder strength (0.0 = no disorder)
+
+    return lmax, rlim, lambda, elim, U, eps, V, W, magfield, gamma, n_pots, sort_type, disorder
 end
  
 do_load = false
 
 if do_load
-    lmax, rlim, lambda, elim, U, eps, V, W, magfield, gamma, n_pots, sort_type = load_pvals_BF(0)
+    lmax, rlim, lambda, elim, U, eps, V, W, magfield, gamma, n_pots, sort_type, disorder = load_pvals_BF(0)
 else
     # NRG params  
     lmax = 20       # Number of iterations
@@ -138,6 +147,8 @@ else
     n_pots = 0
 
     sort_type = "LowRe"
+
+    disorder = BigFloat(0.0) # disorder strength (0.0 = no disorder)
 end  
 
 # store the unscaled (by lambda) values for saving data later
@@ -445,7 +456,7 @@ function intialise_ham_QN_NonHermKondo(J::Number, W::Number, magfield::Number, s
 
     return e_vals, UM, UMd, eground, rmax, rkept, QN, iter_count
 end
-function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array, rmaxofk::Array, rstartk::Array, rkept::Array, l::Number, UM::Array, UMd::Array, M::Array, tn::Array, energies::Array, epsn::Array, prev_UldUr::Array)
+function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array, rmaxofk::Array, rstartk::Array, rkept::Array, l::Number, UM::Array, UMd::Array, M::Array, tn::Array, energies::Array, epsn::Array)
     # Currently have qnind1 (index of state with QN=(q,sz) in the current iteration (l+2))
     H = zeros(Complex{BigFloat}, rmax[l+2, qnind1], rmax[l+2, qnind1])
     sigs = [-1, 1] # spins down/up
@@ -465,13 +476,9 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
             for s in eachindex(sigs)
                 if !iszero(M[s, jk, jkp])
                     # loop over eigenstates with this qn
-                    for r in 1:rmaxofk[l+2, qnind1, jk], rp in 1:rmaxofk[l+2, qnind1, jkp]
-                        # loop over eigenstate inner products
-                        for rpp in findall(x -> !iszero(x), prev_UldUr[qnind2, qnind2][:, rp]) #1:rmaxofk[l+2,qnind1,jkp]
-                            #rpp = rp
+                    for r in 1:rmaxofk[l+2, qnind1, jk], rp in 1:rmaxofk[l+2, qnind1, jkp]  
                             H[rstartk[l+2, qnind1, jk]+r, rstartk[l+2, qnind1, jkp]+rp] +=
-                                tn[l+1] * M[s, jk, jkp] * ((-big"1")^(k+2)) * UM[s, qnind2][r, rp] * prev_UldUr[qnind2, qnind2][rpp, rp]
-                        end
+                                tn[l+1] * M[s, jk, jkp] * ((-big"1")^(k+2)) * UM[s, qnind2][r, rp]  
                     end # (r,rp) loop
                 end # non-zero M element
 
@@ -479,12 +486,8 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
                 if !iszero(M[s, jkp, jk])
                     # loop over eigenstates with this qn
                     for r in 1:rmaxofk[l+2, qnind1, jk], rp in 1:rmaxofk[l+2, qnind1, jkp]
-                        # loop over eigenstate inner products
-                        for rpp in findall(x -> !iszero(x), prev_UldUr[qnind2, qnind2][:, rp]) #1:rmaxofk[l+2,qnind1,jkp]
-                            #rpp = rp
-                            H[rstartk[l+2, qnind1, jk]+r, rstartk[l+2, qnind1, jkp]+rp] +=
-                                tn[l+1] * M[s, jkp, jk] * ((-big"1")^(kp+2)) * UMd[s, qnind2][r, rp] * prev_UldUr[qnind2, qnind2][rpp, rp]
-                        end
+                        H[rstartk[l+2, qnind1, jk]+r, rstartk[l+2, qnind1, jkp]+rp] +=
+                            tn[l+1] * M[s, jkp, jk] * ((-big"1")^(kp+2)) * UMd[s, qnind2][r, rp]  
                     end # (r,rp) loop
                 end # non-zero M element
 
@@ -495,11 +498,8 @@ function get_iter_Ham_QN_NonHerm(qnind1::Int, q0::Array, sz0::Array, rmax::Array
             if k == kp
                 # diagonal elements (not necessarily diagonal for Non Herm)
                 for r in 1:rkept[l+1, qnind2]
-                    for rp in 1:rkept[l+1, qnind2]
-                        #rp = r
-                        # m is used to keep track of where in the super space we are (r is the subspace)
-                        H[r+m, rp+m] = (sqrt(lambda) * energies[l+1, qnind2][rp] + abs(k) * epsn[l+2]) * prev_UldUr[qnind2, qnind2][r, rp] # abs(k) counts the number of electrons in the state and applies that many epsilons
-                    end # rp
+                    # m is used to keep track of where in the super space we are (r is the subspace)
+                    H[r+m, r+m] = (sqrt(lambda) * energies[l+1, qnind2][r] + abs(k) * epsn[l+2]) # abs(k) counts the number of electrons in the state and applies that many epsilons
                 end # r
                 m += rkept[l+1, qnind2] # increase m by this subspace dimension so the next update starts at the end of this update
             end

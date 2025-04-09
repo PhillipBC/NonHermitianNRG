@@ -128,13 +128,13 @@ if do_load
     lmax, rlim, lambda, elim, J, W, magfield, gamma, n_pots, sort_type, disorder = load_pvals(0)
 else
     # NRG params
-    lmax = 80       # Number of iterations
-    rlim = 200      # Hilbert space dimension to truncate to (Max Hilbert space dim)
+    lmax = 160       # Number of iterations
+    rlim = 400      # Hilbert space dimension to truncate to (Max Hilbert space dim)
     lambda = 3.0    # Logarthmic discretisation parameter (>1)
     elim = 1.0e20   # Maximum allowed eigenvalue during truncation  
 
     # System params 
-    J = 0.2 - 0.1im # impurity-bath interaction strength # RUN THIS NEXT
+    J = 0.3 - 5.0im # impurity-bath interaction strength # RUN THIS NEXT
     W = 0.0         # potential on site 0 of bath
     magfield = 0.0  # Sz field on impurity spin  
 
@@ -1014,7 +1014,7 @@ Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground,
 QN, iter_count, energies, rkept, diffs, biorths = Results.value
 println("Time Taken - $(Results.time) s")
 
-##-------------------------------------------------------------------
+# #-------------------------------------------------------------------
 # Plotting the data - Here we use PyPlot, which is a Julia wrapper for Matplotlib
 # one can also use Plots.jl, which is a Julia plotting package that can use PyPlot as a backend
 using PyPlot
@@ -1103,7 +1103,7 @@ function plot_residuals(diffs)
     yscale("log")
     #legend()
 end
-plot_residuals(diffs)
+#plot_residuals(diffs)
 
 function plot_biorth_metric(biorths)
     PyPlot.rc("mathtext", fontset="stix")
@@ -1120,4 +1120,4 @@ function plot_biorth_metric(biorths)
     yscale("log")
     #legend()
 end
-plot_biorth_metric(biorths)
+#plot_biorth_metric(biorths)
