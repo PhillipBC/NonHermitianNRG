@@ -14,6 +14,8 @@ Similarly, in `AIM_QNum_nonHerm.jl` for the Anderson Impurity model.
 In all scripts, parameters can be loaded by setting the variable `do_load` to `true` in the script, and providing a correctly structured parameter file such as the two provided in the Inputs folder. 
 Default values are also provided for all parameters within the scripts.
 
+_Note: The NH-NRG procedure developed assumes that within a symmetry sector of the Hamiltonian there are no exact degeneracies, and thus the left and right eigenvectors form a bi-orthogonal basis._
+
 ## Required packages
 
 - **LinearAlgebra**
