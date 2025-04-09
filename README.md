@@ -51,7 +51,7 @@ Default values are also provided for all parameters within the scripts.
 The scripts will write the energies (`energies`), residuals (`diffs`), bi-orthogonality measures (`biorths`), quantum number dictionary (`QN`), and indexing of kept states (`rkept`) to Julia-specific data files (`.jld`), for ease of loading and saving Julia objects.
 This can be changed to suit the users' needs by updating the relevant saving function in the scripts.
 
-The scripts provide plotting functions for both the residuals and the eigenvalues versus iteration via the `PyPlot` package.
+The scripts provide plotting functions for the residuals, the bi-othogonality measures, and the eigenvalues versus iteration via the `PyPlot` package.
 These functions illustrate how to access the quantum number dictionary correctly to extract eigenvalues at the relevant iteration.
 
 ## Density of states choice
