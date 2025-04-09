@@ -928,6 +928,7 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
     q0 = zeros(Int, 4) # storage for q and sz values of previous iteration
     sz0 = zeros(Int, 4)
 
+    biorths = spzeros(qnmax + 1, lmax + 2) # 2D array indexed by l,QN, with each element a 1D sparse array  
     diffs = spzeros(qnmax + 1, lmax + 2) # 2D array indexed by l,QN, with each element a 1D sparse array
     eground = zeros(ComplexF64, lmax + 2)
 
@@ -1036,11 +1037,11 @@ function iterative_loop_NonHerm(rmax::Array, rkept::Array, UM::Array, UMd::Array
     println("Maximum Hilbert space diagonalized : $max_dim")
 
     save_data_QN_BF_NonHermKondo(lmax, rlim, lambda, elim, p_J, p_W, p_magfield, gamma, disorder, energies, diffs, QN, rkept, biorths)
-    return QN, iter_count, energies, rkept, diffs
+    return QN, iter_count, energies, rkept, diffs, biorths
 end
 
 Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground, QN, iter_count, numqns, disorder)
-QN, iter_count, energies, rkept, diffs = Results.value 
+QN, iter_count, energies, rkept, diffs, biorths = Results.value 
 println("Time Taken - $(Results.time)s")
  
 ##------------------------------------------------------------------- 
@@ -1126,3 +1127,20 @@ function plot_residuals(diffs)
     #legend()
 end
 plot_residuals(diffs)
+
+function plot_biorth_metric(biorths)
+    PyPlot.rc("mathtext", fontset="stix")
+    PyPlot.rc("font", family="STIXGeneral", size=23)
+    dpi_val = 100
+    figure(constrained_layout=true, dpi=dpi_val, figsize=(6.5, 4.7))
+    ls = "none"
+    lw = 0.2
+    plot(1:lmax+2, maximum.(eachcol(biorths)), marker="o", linestyle=ls, lw=lw, ms=3.0, label="rlim = $rlim")
+    legend(loc="lower right", fontsize=18)
+    #plot(ftran_temp, (ftran_ent), marker="d", linestyle=":", label="Fortran")
+    xlabel("\$n\$")
+    ylabel("\$ \\max_q(|U^{L\\dagger}U^R - I|)\$")
+    yscale("log")
+    #legend()
+end
+plot_biorth_metric(biorths)
