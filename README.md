@@ -1,5 +1,8 @@
 # NonHermitianNRG
 
+_We ask that if you use this code in your research, please cite our accompanying paper on arXiv, which describes the procedure:_ [[arXiv:2504.XXXXX](https://arxiv.org/abs/2504.XXXXX)]
+
+
 Julia script that implements a non-Hermitian Numerical Renormalization Group (NRG) procedure to solve 
 - The non-Hermitian Kondo model 
 - The non-Hermitian Anderson Impurity model.
