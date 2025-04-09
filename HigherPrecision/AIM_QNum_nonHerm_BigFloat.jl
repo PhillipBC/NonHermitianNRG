@@ -129,8 +129,8 @@ if do_load
     lmax, rlim, lambda, elim, U, eps, V, magfield, gamma, n_pots, sort_type, disorder = load_pvals_BF(0)
 else
     # NRG params  
-    lmax = 60       # Number of iterations
-    rlim = 100      # Hilbert space dimension to truncate to (Max Hilbert space dim)
+    lmax = 80       # Number of iterations
+    rlim = 200      # Hilbert space dimension to truncate to (Max Hilbert space dim)
     lambda = big"3.0"    # Logarthmic discretisation parameter (>1)
     elim = BigFloat(1.0e20)      # Maximum allowed eigenvalue during truncation  
 

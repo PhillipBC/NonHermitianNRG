@@ -1014,7 +1014,7 @@ Results = @timed iterative_loop_NonHerm(rmax, rkept, UM, UMd, energies, eground,
 QN, iter_count, energies, rkept, diffs, biorths = Results.value
 println("Time Taken - $(Results.time) s")
 
-# #-------------------------------------------------------------------
+##-------------------------------------------------------------------
 # Plotting the data - Here we use PyPlot, which is a Julia wrapper for Matplotlib
 # one can also use Plots.jl, which is a Julia plotting package that can use PyPlot as a backend
 using PyPlot
@@ -1103,7 +1103,7 @@ function plot_residuals(diffs)
     yscale("log")
     #legend()
 end
-#plot_residuals(diffs)
+plot_residuals(diffs)
 
 function plot_biorth_metric(biorths)
     PyPlot.rc("mathtext", fontset="stix")
@@ -1120,4 +1120,4 @@ function plot_biorth_metric(biorths)
     yscale("log")
     #legend()
 end
-#plot_biorth_metric(biorths)
+plot_biorth_metric(biorths)
